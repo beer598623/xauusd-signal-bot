@@ -388,9 +388,6 @@ def main() -> None:
     log.info("XAUUSD Signal Generator starting...")
     ensure_log()
 
-    send_text("Test: Bot เชื่อมต่อ Telegram สำเร็จ!")
-
-
     global _pending_signal
     _pending_signal = None
 
