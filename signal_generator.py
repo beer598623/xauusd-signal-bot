@@ -47,7 +47,7 @@ BE_TRIGGER_MULT = 1.0
 MIN_LOT         = 0.01
 
 SESSIONS_UTC = [
-    (7, 20),   # London + NY ต่อเนื่อง 14:00-03:00 ไทย
+    (7, 20),
 ]
 
 LOOP_INTERVAL_SEC = 60
@@ -169,8 +169,8 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
     if ind_1h["adx"] < ADX_MIN:
         return None
 
-    atr      = ind_5m["atr"]
-    bullish  = ind_1h["ema21"] > ind_1h["ema50"]
+    atr     = ind_5m["atr"]
+    bullish = ind_1h["ema21"] > ind_1h["ema50"]
 
     if bullish:
         if ind_5m["prev_low"] > ind_5m["prev_bb_lower"]: return None
@@ -216,8 +216,39 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
         }
 
 
+def get_current_balance() -> float:
+    """คำนวณ balance จริงจาก performance_log.csv"""
+    if not LOG_FILE.exists():
+        return ACCOUNT_BALANCE
+    try:
+        total_pnl = 0.0
+        with open(LOG_FILE, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                exit_price = row.get("exit_price", "").strip()
+                if not exit_price:
+                    continue
+                try:
+                    entry = float(row["entry"])
+                    lot   = float(row["lot"])
+                    exit_ = float(exit_price)
+                    if row["direction"] == "BUY":
+                        total_pnl += (exit_ - entry) * lot * 100
+                    elif row["direction"] == "SELL":
+                        total_pnl += (entry - exit_) * lot * 100
+                except:
+                    continue
+        balance = ACCOUNT_BALANCE + total_pnl
+        log.info(f"Balance: ${balance:.2f} (PnL: ${total_pnl:+.2f})")
+        return balance
+    except Exception as e:
+        log.warning(f"Could not read balance: {e}")
+        return ACCOUNT_BALANCE
+
+
 def calc_lot_size(sl_pts: float) -> float:
-    risk_usd = ACCOUNT_BALANCE * RISK_PERCENT / 100
+    balance  = get_current_balance()
+    risk_usd = balance * RISK_PERCENT / 100
     if sl_pts <= 0:
         return MIN_LOT
     return max(MIN_LOT, round(int(risk_usd / (sl_pts * 100) / MIN_LOT) * MIN_LOT, 2))
@@ -278,7 +309,7 @@ def answer_callback(callback_id: str, text: str) -> None:
 LOG_COLUMNS = [
     "timestamp", "action", "direction", "entry", "sl", "tp",
     "sl_dist", "lot", "atr", "ema21", "ema50", "adx",
-    "rsi", "prev_rsi", "bb_lower", "bb_upper", "be_level",
+    "rsi", "prev_rsi", "bb_lower", "bb_upper", "be_level", "exit_price",
 ]
 
 
@@ -291,23 +322,24 @@ def ensure_log() -> None:
 def append_log(signal: dict, action: str) -> None:
     ensure_log()
     row = {
-        "timestamp": signal.get("timestamp"),
-        "action":    action,
-        "direction": signal.get("direction"),
-        "entry":     signal.get("entry"),
-        "sl":        signal.get("sl"),
-        "tp":        signal.get("tp"),
-        "sl_dist":   signal.get("sl_dist"),
-        "lot":       signal.get("lot"),
-        "atr":       signal.get("atr"),
-        "ema21":     signal.get("ema21"),
-        "ema50":     signal.get("ema50"),
-        "adx":       signal.get("adx"),
-        "rsi":       signal.get("5m_rsi"),
-        "prev_rsi":  signal.get("5m_prev_rsi"),
-        "bb_lower":  signal.get("5m_bb_lower"),
-        "bb_upper":  signal.get("5m_bb_upper"),
-        "be_level":  signal.get("be_level"),
+        "timestamp":  signal.get("timestamp"),
+        "action":     action,
+        "direction":  signal.get("direction"),
+        "entry":      signal.get("entry"),
+        "sl":         signal.get("sl"),
+        "tp":         signal.get("tp"),
+        "sl_dist":    signal.get("sl_dist"),
+        "lot":        signal.get("lot"),
+        "atr":        signal.get("atr"),
+        "ema21":      signal.get("ema21"),
+        "ema50":      signal.get("ema50"),
+        "adx":        signal.get("adx"),
+        "rsi":        signal.get("5m_rsi"),
+        "prev_rsi":   signal.get("5m_prev_rsi"),
+        "bb_lower":   signal.get("5m_bb_lower"),
+        "bb_upper":   signal.get("5m_bb_upper"),
+        "be_level":   signal.get("be_level"),
+        "exit_price": "",
     }
     with open(LOG_FILE, "a", newline="") as f:
         csv.DictWriter(f, fieldnames=LOG_COLUMNS).writerow(row)
