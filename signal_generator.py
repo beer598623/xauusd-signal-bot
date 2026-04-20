@@ -47,8 +47,7 @@ BE_TRIGGER_MULT = 1.0
 MIN_LOT         = 0.01
 
 SESSIONS_UTC = [
-    (7, 12),
-    (13, 20),
+    (7, 20),   # London + NY ต่อเนื่อง 14:00-03:00 ไทย
 ]
 
 LOOP_INTERVAL_SEC = 60
@@ -326,6 +325,9 @@ def git_commit_log() -> None:
             return
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         subprocess.run(["git", "commit", "-m", f"perf: auto-log update {now}"], check=True)
+        subprocess.run(["git", "pull", "--rebase",
+                        f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git",
+                        "main"], check=True)
         subprocess.run(["git", "push",
                         f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git",
                         "HEAD:main"], check=True)
