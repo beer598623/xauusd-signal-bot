@@ -30,7 +30,7 @@ TWELVEDATA_API_KEY  = os.environ["TWELVEDATA_API_KEY"]
 GITHUB_TOKEN        = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_REPO         = os.environ.get("GITHUB_REPO", "")
 RISK_PERCENT        = float(os.environ.get("RISK_PERCENT", "1.0"))
-ACCOUNT_BALANCE     = float(os.environ.get("ACCOUNT_BALANCE", "1000.0"))
+ACCOUNT_BALANCE     = float(os.environ.get("ACCOUNT_BALANCE", "100.0"))
 
 BB_PERIOD       = 20
 BB_STDDEV       = 2.0
@@ -56,6 +56,13 @@ RUNTIME_MINUTES   = 355
 TD_BASE  = "https://api.twelvedata.com"
 SYMBOL   = "XAU/USD"
 LOG_FILE = Path("performance_log.csv")
+
+LOG_COLUMNS = [
+    "timestamp", "action", "direction", "entry", "sl", "tp",
+    "sl_dist", "lot", "atr", "ema21", "ema50", "adx",
+    "rsi", "prev_rsi", "bb_lower", "bb_upper", "be_level",
+    "exit_price", "actual_entry",
+]
 
 
 def fetch_ohlcv(interval: str, outputsize: int = 200) -> pd.DataFrame:
@@ -217,7 +224,7 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
 
 
 def get_current_balance() -> float:
-    """คำนวณ balance จริงจาก performance_log.csv"""
+    """คำนวณ balance จริงจาก exit_price และ actual_entry ใน CSV"""
     if not LOG_FILE.exists():
         return ACCOUNT_BALANCE
     try:
@@ -229,7 +236,11 @@ def get_current_balance() -> float:
                 if not exit_price:
                     continue
                 try:
-                    entry = float(row["entry"])
+                    # ใช้ actual_entry ถ้ามี ถ้าไม่มีใช้ entry จาก signal
+                    entry_str = row.get("actual_entry", "").strip()
+                    if not entry_str:
+                        entry_str = row.get("entry", "").strip()
+                    entry = float(entry_str)
                     lot   = float(row["lot"])
                     exit_ = float(exit_price)
                     if row["direction"] == "BUY":
@@ -239,7 +250,7 @@ def get_current_balance() -> float:
                 except:
                     continue
         balance = ACCOUNT_BALANCE + total_pnl
-        log.info(f"Balance: ${balance:.2f} (PnL: ${total_pnl:+.2f})")
+        log.info(f"Balance: ${balance:.2f} (Starting: ${ACCOUNT_BALANCE} | PnL: ${total_pnl:+.2f})")
         return balance
     except Exception as e:
         log.warning(f"Could not read balance: {e}")
@@ -306,13 +317,6 @@ def answer_callback(callback_id: str, text: str) -> None:
                   json={"callback_query_id": callback_id, "text": text}, timeout=10)
 
 
-LOG_COLUMNS = [
-    "timestamp", "action", "direction", "entry", "sl", "tp",
-    "sl_dist", "lot", "atr", "ema21", "ema50", "adx",
-    "rsi", "prev_rsi", "bb_lower", "bb_upper", "be_level", "exit_price",
-]
-
-
 def ensure_log() -> None:
     if not LOG_FILE.exists():
         with open(LOG_FILE, "w", newline="") as f:
@@ -322,24 +326,25 @@ def ensure_log() -> None:
 def append_log(signal: dict, action: str) -> None:
     ensure_log()
     row = {
-        "timestamp":  signal.get("timestamp"),
-        "action":     action,
-        "direction":  signal.get("direction"),
-        "entry":      signal.get("entry"),
-        "sl":         signal.get("sl"),
-        "tp":         signal.get("tp"),
-        "sl_dist":    signal.get("sl_dist"),
-        "lot":        signal.get("lot"),
-        "atr":        signal.get("atr"),
-        "ema21":      signal.get("ema21"),
-        "ema50":      signal.get("ema50"),
-        "adx":        signal.get("adx"),
-        "rsi":        signal.get("5m_rsi"),
-        "prev_rsi":   signal.get("5m_prev_rsi"),
-        "bb_lower":   signal.get("5m_bb_lower"),
-        "bb_upper":   signal.get("5m_bb_upper"),
-        "be_level":   signal.get("be_level"),
-        "exit_price": "",
+        "timestamp":    signal.get("timestamp"),
+        "action":       action,
+        "direction":    signal.get("direction"),
+        "entry":        signal.get("entry"),
+        "sl":           signal.get("sl"),
+        "tp":           signal.get("tp"),
+        "sl_dist":      signal.get("sl_dist"),
+        "lot":          signal.get("lot"),
+        "atr":          signal.get("atr"),
+        "ema21":        signal.get("ema21"),
+        "ema50":        signal.get("ema50"),
+        "adx":          signal.get("adx"),
+        "rsi":          signal.get("5m_rsi"),
+        "prev_rsi":     signal.get("5m_prev_rsi"),
+        "bb_lower":     signal.get("5m_bb_lower"),
+        "bb_upper":     signal.get("5m_bb_upper"),
+        "be_level":     signal.get("be_level"),
+        "exit_price":   "",
+        "actual_entry": "",
     }
     with open(LOG_FILE, "a", newline="") as f:
         csv.DictWriter(f, fieldnames=LOG_COLUMNS).writerow(row)
@@ -354,15 +359,14 @@ def git_commit_log() -> None:
         subprocess.run(["git", "config", "user.name", "GitHub Actions Bot"], check=True)
         subprocess.run(["git", "add", str(LOG_FILE)], check=True)
         if subprocess.run(["git", "diff", "--cached", "--quiet"], capture_output=True).returncode == 0:
+            log.info("No changes to commit.")
             return
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         subprocess.run(["git", "commit", "-m", f"perf: auto-log update {now}"], check=True)
-        subprocess.run(["git", "pull", "--rebase",
-                        f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git",
-                        "main"], check=True)
-        subprocess.run(["git", "push",
-                        f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git",
-                        "HEAD:main"], check=True)
+        # pull --rebase ก่อน push เพื่อแก้ปัญหา rejected
+        remote = f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git"
+        subprocess.run(["git", "pull", "--rebase", remote, "main"], check=True)
+        subprocess.run(["git", "push", remote, "HEAD:main"], check=True)
         log.info("performance_log.csv pushed to GitHub")
     except subprocess.CalledProcessError as e:
         log.error(f"Git commit failed: {e}")
@@ -370,6 +374,7 @@ def git_commit_log() -> None:
 
 def main() -> None:
     log.info("XAUUSD Signal Generator starting...")
+    log.info(f"Starting balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}%")
     ensure_log()
 
     global _pending_signal
