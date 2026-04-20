@@ -70,13 +70,14 @@
   .tfv{font-family:var(--mono);font-size:12px;color:var(--text)}
   .ttime{font-family:var(--mono);font-size:10px;color:var(--text-faint);margin-top:10px;padding-top:8px;border-top:1px solid var(--border)}
   .exsec{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
-  .exrow{display:flex;gap:8px;align-items:center}
+  .exrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
   .exinput{flex:1;background:var(--bg);border:1px solid var(--border2);border-radius:4px;padding:8px 10px;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;width:auto}
   .exinput:focus{border-color:var(--accent)}
   .exbtn{background:var(--accent);color:#fff;border:none;border-radius:4px;padding:8px 14px;font-family:var(--mono);font-size:11px;cursor:pointer;white-space:nowrap}
   .exbtn.saving{opacity:.5;pointer-events:none}
   .pnl{margin-top:8px;font-family:var(--mono);font-size:13px;font-weight:500}
   .pnl.p{color:var(--green)}.pnl.l{color:var(--red)}
+  .result-detail{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:4px}
   .empty{text-align:center;padding:48px 20px;color:var(--text-dim);font-family:var(--mono);font-size:13px}
   .empty-t{font-size:15px;color:var(--text);margin-bottom:6px}
   .pg{display:flex;gap:8px;margin-top:16px;justify-content:center}
@@ -200,18 +201,20 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 function saveToken(){
   const t=document.getElementById('gh-token').value.trim();
-  if(t){ localStorage.setItem('gh_token',t); setS('Token saved','ok'); }
+  if(t){localStorage.setItem('gh_token',t);setS('Token saved','ok');}
   setTimeout(()=>setS('พร้อมใช้งาน','ok'),1500);
 }
 
-function getToken(){ return localStorage.getItem('gh_token')||''; }
-function getSB(){ return parseFloat(localStorage.getItem('start_balance')||'1000'); }
-function getWD(){ try{return JSON.parse(localStorage.getItem('withdrawals')||'[]')}catch{return[]} }
-function setWD(w){ localStorage.setItem('withdrawals',JSON.stringify(w)); }
-function TK(t){ return t.timestamp+'_'+t.entry; }
+function getToken(){return localStorage.getItem('gh_token')||'';}
+function getSB(){return parseFloat(localStorage.getItem('start_balance')||'1000');}
+function getWD(){try{return JSON.parse(localStorage.getItem('withdrawals')||'[]')}catch{return[]}}
+function setWD(w){localStorage.setItem('withdrawals',JSON.stringify(w));}
+function TK(t){return t.timestamp+'_'+t.entry;}
 
 function calcPnL(t,exit){
-  const e=parseFloat(t.entry),l=parseFloat(t.lot),x=parseFloat(exit);
+  const e=parseFloat(t.actual_entry||t.entry);
+  const l=parseFloat(t.lot);
+  const x=parseFloat(exit);
   if(!e||!l||!x) return null;
   return t.direction==='BUY'?(x-e)*l*100:(e-x)*l*100;
 }
@@ -243,7 +246,7 @@ async function pushCSV(newContent){
   const r=await fetch(`https://api.github.com/repos/${info.repo}/contents/${info.path}`,{
     method:'PUT',
     headers:{'Authorization':'token '+token,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
-    body:JSON.stringify({message:'perf: update exit price '+new Date().toISOString().slice(0,16)+' UTC',content:encoded,sha:CSVSHA})
+    body:JSON.stringify({message:'perf: update trade result '+new Date().toISOString().slice(0,16)+' UTC',content:encoded,sha:CSVSHA})
   });
   if(!r.ok){const e=await r.json();throw new Error(e.message||r.status);}
   const d=await r.json();CSVSHA=d.content.sha;
@@ -288,13 +291,16 @@ function parseCSV(t){
 function csvToString(rows){
   const h=Object.keys(rows[0]);
   if(!h.includes('exit_price')) h.push('exit_price');
+  if(!h.includes('actual_entry')) h.push('actual_entry');
   return[h.join(','),...rows.map(r=>h.map(k=>r[k]||'').join(','))].join('\n')+'\n';
 }
 
 async function svExit(key){
-  const inp=document.getElementById('ex_'+key);
-  if(!inp||!inp.value) return;
-  const exitPrice=parseFloat(inp.value);
+  const exInp=document.getElementById('ex_'+key);
+  const aeInp=document.getElementById('ae_'+key);
+  if(!exInp||!exInp.value) return;
+  const exitPrice=parseFloat(exInp.value);
+  const actualEntry=aeInp&&aeInp.value?parseFloat(aeInp.value):null;
   if(!exitPrice) return;
   const btn=document.querySelector(`[data-save="${key}"]`);
   if(btn){btn.classList.add('saving');btn.textContent='Saving...';}
@@ -302,11 +308,12 @@ async function svExit(key){
     const idx=AT.findIndex(t=>TK(t)===key);
     if(idx===-1) throw new Error('trade not found');
     AT[idx].exit_price=exitPrice.toString();
+    if(actualEntry) AT[idx].actual_entry=actualEntry.toString();
     const newCSV=csvToString(AT);
     if(getToken()){
       await pushCSV(newCSV);
       setS('บันทึกสำเร็จ - push ขึ้น GitHub แล้ว','ok');
-    } else {
+    }else{
       setS('บันทึกแล้ว (ไม่มี Token - ไม่ได้ push GitHub)','ok');
     }
     setTimeout(()=>setS('',''),3000);
@@ -319,7 +326,7 @@ async function svExit(key){
 
 function clrExit(key){
   const idx=AT.findIndex(t=>TK(t)===key);
-  if(idx!==-1) delete AT[idx].exit_price;
+  if(idx!==-1){delete AT[idx].exit_price;delete AT[idx].actual_entry;}
   renderAll();
 }
 
@@ -439,20 +446,29 @@ function card(t){
   const isC=act==='CONFIRM',hasPnl=!!exit;
   const cls=hasPnl?(pnl>=0?'wp':'wl'):'';
   const key=TK(t);
+  const actualEntryDisplay=t.actual_entry?t.actual_entry:t.entry;
+
   const exHtml=isC?`<div class="exsec">${hasPnl?`
-    <div class="pnl ${pnl>=0?'p':'l'}">Exit: ${exit} | PnL: ${pnl>=0?'+':''}$${pnl.toFixed(2)}</div>
+    <div class="pnl ${pnl>=0?'p':'l'}">PnL: ${pnl>=0?'+':''}$${pnl.toFixed(2)}</div>
+    <div class="result-detail">Actual Entry: ${actualEntryDisplay} | Exit: ${exit}</div>
     <button class="btn bo" style="margin-top:6px;font-size:10px;padding:4px 10px" onclick="clrExit('${key}')">แก้ไข</button>
-  `:`<div class="exrow">
-    <input class="exinput" id="ex_${key}" type="number" placeholder="Exit price" step="0.01"/>
-    <button class="exbtn" data-save="${key}" onclick="svExit('${key}')">Save</button>
+  `:`<div style="display:flex;flex-direction:column;gap:6px">
+    <div class="exrow">
+      <input class="exinput" id="ae_${key}" type="number" placeholder="Actual entry (signal: ${t.entry})" step="0.01"/>
+    </div>
+    <div class="exrow">
+      <input class="exinput" id="ex_${key}" type="number" placeholder="Exit price" step="0.01"/>
+      <button class="exbtn" data-save="${key}" onclick="svExit('${key}')">Save</button>
+    </div>
   </div>`}</div>`:'';
+
   return `<div class="tc ${cls}">
     <div class="ttop">
       <div class="tdir ${dir.toLowerCase()}">${dir}</div>
       <div class="tact ${act.toLowerCase()}">${isC?'CONFIRMED':'SKIPPED'}</div>
     </div>
     <div class="tg">
-      <div><div class="tfl">Entry</div><div class="tfv">${t.entry||'-'}</div></div>
+      <div><div class="tfl">Signal Entry</div><div class="tfv">${t.entry||'-'}</div></div>
       <div><div class="tfl">SL</div><div class="tfv">${t.sl||'-'}</div></div>
       <div><div class="tfl">TP</div><div class="tfv">${t.tp||'-'}</div></div>
       <div><div class="tfl">Lot</div><div class="tfv">${t.lot||'-'}</div></div>
