@@ -2,15 +2,15 @@ name: XAUUSD Signal Generator
 
 on:
   schedule:
-    - cron: "0 13 * * 1-5"
+    - cron: "0 8 * * 1-5"
 
   workflow_dispatch:
 
 jobs:
   run-signal-generator:
-    name: Run Signal Generator (55 min)
+    name: Run Signal Generator (355 min)
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 365
 
     permissions:
       contents: write
@@ -31,7 +31,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Run signal generator (55 minutes)
+      - name: Run signal generator (355 minutes)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
