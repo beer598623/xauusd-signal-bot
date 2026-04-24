@@ -1,7 +1,10 @@
 """
-XAUUSD MTF BB Pullback - Signal Generator
-Strategy: BB Touch + MTF Filter (5m entry, 1H filter)
-Backtest: WR 51.4% | PF 4.25 | MaxDD -2.03% | Sep 2025-Apr 2026
+XAUUSD MTF BB Pullback - Signal Generator v2.1
+Changes from v2:
+- Fix: git merge -X ours แทน rebase ป้องกัน CSV conflict
+- Fix: Signal queue แทน single pending signal
+- Remove: MAX_TRADES_PER_DAY
+- Keep: Loss streak cooldown
 """
 
 import os
@@ -32,30 +35,31 @@ GITHUB_REPO         = os.environ.get("GITHUB_REPO", "")
 RISK_PERCENT        = float(os.environ.get("RISK_PERCENT", "1.0"))
 ACCOUNT_BALANCE     = float(os.environ.get("ACCOUNT_BALANCE", "100.0"))
 
-BB_PERIOD       = 20
-BB_STDDEV       = 2.0
-RSI_PERIOD      = 14
-ATR_PERIOD      = 14
-EMA_FAST        = 21
-EMA_SLOW        = 50
-ADX_PERIOD      = 14
-ADX_MIN         = 22.0
-SL_BUFFER_MULT  = 0.3
-MAX_SL_MULT     = 3.0
-TP_RR           = 2.5
-BE_TRIGGER_MULT = 1.0
-MIN_LOT         = 0.01
-
-SESSIONS_UTC = [
-    (7, 20),
-]
-
-LOOP_INTERVAL_SEC = 60
-RUNTIME_MINUTES   = 355
-
-TD_BASE  = "https://api.twelvedata.com"
-SYMBOL   = "XAU/USD"
-LOG_FILE = Path("performance_log.csv")
+BB_PERIOD           = 20
+BB_STDDEV           = 2.0
+RSI_PERIOD          = 14
+ATR_PERIOD          = 14
+EMA_FAST            = 21
+EMA_SLOW            = 50
+ADX_PERIOD          = 10
+ADX_MIN             = 22.0
+RSI_BUY_MAX         = 48
+RSI_SELL_MIN        = 52
+SL_BUFFER_MULT      = 0.3
+MAX_SL_MULT         = 3.0
+TP_RR               = 2.5
+BE_TRIGGER_MULT     = 1.0
+MIN_LOT             = 0.01
+ATR_EXPANSION_MULT  = 1.2
+MAX_LOSS_STREAK     = 3
+ROLLOVER_START      = (21, 59)
+ROLLOVER_END        = (22, 10)
+SESSIONS_UTC        = [(7, 20)]
+LOOP_INTERVAL_SEC   = 60
+RUNTIME_MINUTES     = 355
+TD_BASE             = "https://api.twelvedata.com"
+SYMBOL              = "XAU/USD"
+LOG_FILE            = Path("performance_log.csv")
 
 LOG_COLUMNS = [
     "timestamp", "action", "direction", "entry", "sl", "tp",
@@ -114,7 +118,7 @@ def calc_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
     return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 
-def calc_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+def calc_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 10) -> pd.Series:
     tr    = calc_atr(high, low, close, period)
     up    = high.diff()
     dn    = -low.diff()
@@ -142,8 +146,9 @@ def build_indicators_5m(df: pd.DataFrame) -> dict:
     high  = df["high"]
     low   = df["low"]
     bb_u, bb_m, bb_l = calc_bb(close, BB_PERIOD, BB_STDDEV)
-    rsi  = calc_rsi(close, RSI_PERIOD)
-    atr  = calc_atr(high, low, close, ATR_PERIOD)
+    rsi     = calc_rsi(close, RSI_PERIOD)
+    atr     = calc_atr(high, low, close, ATR_PERIOD)
+    atr_avg = float(atr.rolling(20).mean().iloc[-1])
     return {
         "close":         float(close.iloc[-1]),
         "high":          float(high.iloc[-1]),
@@ -153,6 +158,7 @@ def build_indicators_5m(df: pd.DataFrame) -> dict:
         "bb_lower":      float(bb_l.iloc[-1]),
         "rsi":           float(rsi.iloc[-1]),
         "atr":           float(atr.iloc[-1]),
+        "atr_avg":       atr_avg,
         "prev_high":     float(high.iloc[-2]),
         "prev_low":      float(low.iloc[-2]),
         "prev_bb_upper": float(bb_u.iloc[-2]),
@@ -168,12 +174,73 @@ def is_trading_session(dt_utc: datetime) -> bool:
     return False
 
 
+def is_rollover(dt_utc: datetime) -> bool:
+    h, m = dt_utc.hour, dt_utc.minute
+    if h == ROLLOVER_START[0] and m >= ROLLOVER_START[1]:
+        return True
+    if h == ROLLOVER_END[0] and m <= ROLLOVER_END[1]:
+        return True
+    return False
+
+
+def get_loss_streak() -> int:
+    if not LOG_FILE.exists():
+        return 0
+    try:
+        rows = []
+        with open(LOG_FILE, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("action") == "CONFIRM" and row.get("exit_price"):
+                    rows.append(row)
+        if not rows:
+            return 0
+        streak = 0
+        for row in reversed(rows):
+            try:
+                entry_str = row.get("actual_entry") or row.get("entry")
+                entry = float(entry_str)
+                lot   = float(row["lot"])
+                exit_ = float(row["exit_price"])
+                if row["direction"] == "BUY":
+                    p = (exit_ - entry) * lot * 100
+                else:
+                    p = (entry - exit_) * lot * 100
+                if p < 0:
+                    streak += 1
+                else:
+                    break
+            except:
+                break
+        return streak
+    except:
+        return 0
+
+
+def is_market_active(ind_5m: dict) -> bool:
+    atr     = ind_5m["atr"]
+    atr_avg = ind_5m["atr_avg"]
+    if atr_avg <= 0 or pd.isna(atr_avg):
+        return True
+    return atr >= atr_avg * ATR_EXPANSION_MULT
+
+
 def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
     if not is_trading_session(dt_utc):
+        return None
+    if is_rollover(dt_utc):
+        log.info("SKIP: rollover 21:59-22:10 UTC")
+        return None
+    streak = get_loss_streak()
+    if streak >= MAX_LOSS_STREAK:
+        log.info(f"SKIP: loss streak cooldown ({streak} losses)")
         return None
     if abs(ind_1h["ema21"] - ind_1h["ema50"]) / ind_1h["ema50"] * 100 < 0.1:
         return None
     if ind_1h["adx"] < ADX_MIN:
+        return None
+    if not is_market_active(ind_5m):
+        log.info(f"SKIP: low vol ATR={ind_5m['atr']:.2f} avg={ind_5m['atr_avg']:.2f}")
         return None
 
     atr     = ind_5m["atr"]
@@ -182,7 +249,7 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
     if bullish:
         if ind_5m["prev_low"] > ind_5m["prev_bb_lower"]: return None
         if ind_5m["close"] <= ind_5m["bb_lower"]: return None
-        if ind_5m["prev_rsi"] >= 45: return None
+        if ind_5m["prev_rsi"] >= RSI_BUY_MAX: return None
         if ind_5m["rsi"] <= ind_5m["prev_rsi"]: return None
         sl_price = ind_5m["prev_low"] - SL_BUFFER_MULT * atr
         sl_dist  = ind_5m["close"] - sl_price
@@ -203,7 +270,7 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
     else:
         if ind_5m["prev_high"] < ind_5m["prev_bb_upper"]: return None
         if ind_5m["close"] >= ind_5m["bb_upper"]: return None
-        if ind_5m["prev_rsi"] <= 55: return None
+        if ind_5m["prev_rsi"] <= RSI_SELL_MIN: return None
         if ind_5m["rsi"] >= ind_5m["prev_rsi"]: return None
         sl_price = ind_5m["prev_high"] + SL_BUFFER_MULT * atr
         sl_dist  = sl_price - ind_5m["close"]
@@ -224,7 +291,6 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
 
 
 def get_current_balance() -> float:
-    """คำนวณ balance จริงจาก exit_price และ actual_entry ใน CSV"""
     if not LOG_FILE.exists():
         return ACCOUNT_BALANCE
     try:
@@ -236,10 +302,7 @@ def get_current_balance() -> float:
                 if not exit_price:
                     continue
                 try:
-                    # ใช้ actual_entry ถ้ามี ถ้าไม่มีใช้ entry จาก signal
-                    entry_str = row.get("actual_entry", "").strip()
-                    if not entry_str:
-                        entry_str = row.get("entry", "").strip()
+                    entry_str = row.get("actual_entry", "").strip() or row.get("entry", "").strip()
                     entry = float(entry_str)
                     lot   = float(row["lot"])
                     exit_ = float(exit_price)
@@ -250,7 +313,7 @@ def get_current_balance() -> float:
                 except:
                     continue
         balance = ACCOUNT_BALANCE + total_pnl
-        log.info(f"Balance: ${balance:.2f} (Starting: ${ACCOUNT_BALANCE} | PnL: ${total_pnl:+.2f})")
+        log.info(f"Balance: ${balance:.2f} (PnL: ${total_pnl:+.2f})")
         return balance
     except Exception as e:
         log.warning(f"Could not read balance: {e}")
@@ -265,8 +328,8 @@ def calc_lot_size(sl_pts: float) -> float:
     return max(MIN_LOT, round(int(risk_usd / (sl_pts * 100) / MIN_LOT) * MIN_LOT, 2))
 
 
-TG_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
-_pending_signal: dict | None = None
+TG_BASE        = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+_pending_queue: list = []
 
 
 def send_signal_alert(signal: dict) -> None:
@@ -274,6 +337,9 @@ def send_signal_alert(signal: dict) -> None:
     thai_time = (datetime.fromisoformat(signal["timestamp"])
                  .replace(tzinfo=timezone.utc) + timedelta(hours=7)
                  ).strftime("%d/%m/%Y %H:%M")
+    streak = get_loss_streak()
+    queue_size = len(_pending_queue)
+
     text = (
         f"XAUUSD {direction} SIGNAL\n"
         f"Time: {thai_time} (Thai)\n\n"
@@ -284,7 +350,9 @@ def send_signal_alert(signal: dict) -> None:
         f"Lot Size: {signal['lot']} lot\n\n"
         f"1H: EMA21={signal['ema21']:.2f} EMA50={signal['ema50']:.2f} ADX={signal['adx']:.1f}\n"
         f"5m: RSI={signal['5m_rsi']:.1f} ATR={signal['atr']:.2f}\n\n"
-        f"กด Confirm เพื่อบันทึก หรือ Skip เพื่อข้าม"
+        f"Streak: {streak}L"
+        + (f" | Queue: {queue_size} pending" if queue_size > 1 else "")
+        + "\n\nกด Confirm หรือ Skip"
     )
     payload = {
         "chat_id":    TELEGRAM_CHAT_ID,
@@ -363,22 +431,27 @@ def git_commit_log() -> None:
             return
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         subprocess.run(["git", "commit", "-m", f"perf: auto-log update {now}"], check=True)
-        # pull --rebase ก่อน push เพื่อแก้ปัญหา rejected
         remote = f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git"
-        subprocess.run(["git", "pull", "--rebase", remote, "main"], check=True)
+        # Fix: ใช้ merge -X ours แทน rebase ป้องกัน CSV conflict
+        subprocess.run(["git", "fetch", remote, "main"], check=True)
+        subprocess.run(["git", "merge", "-X", "ours", "FETCH_HEAD",
+                        "--no-edit", "-m", "merge: keep local log"], check=True)
         subprocess.run(["git", "push", remote, "HEAD:main"], check=True)
         log.info("performance_log.csv pushed to GitHub")
     except subprocess.CalledProcessError as e:
         log.error(f"Git commit failed: {e}")
+        # พยายาม abort rebase ถ้าค้างอยู่
+        subprocess.run(["git", "rebase", "--abort"], capture_output=True)
 
 
 def main() -> None:
-    log.info("XAUUSD Signal Generator starting...")
-    log.info(f"Starting balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}%")
+    log.info("XAUUSD Signal Generator v2.1 starting...")
+    log.info(f"Balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}% | ADX: {ADX_PERIOD}")
+    log.info(f"Loss streak limit: {MAX_LOSS_STREAK}")
     ensure_log()
 
-    global _pending_signal
-    _pending_signal = None
+    global _pending_queue
+    _pending_queue = []
 
     start_time     = time.time()
     deadline       = start_time + RUNTIME_MINUTES * 60
@@ -388,25 +461,36 @@ def main() -> None:
     while time.time() < deadline:
         loop_start = time.time()
 
+        # ── Poll Telegram callbacks ──
         try:
             for upd in get_updates(offset=last_update_id + 1):
                 last_update_id = upd["update_id"]
-                if "callback_query" in upd and _pending_signal is not None:
-                    cb   = upd["callback_query"]
-                    data = cb["data"]
+                if "callback_query" in upd and _pending_queue:
+                    cb     = upd["callback_query"]
+                    data   = cb["data"]
+                    signal = _pending_queue.pop(0)  # ดึง signal แรกสุดออก
                     answer_callback(cb["id"], "Saved!" if data == "confirm" else "Skipped")
                     action = "CONFIRM" if data == "confirm" else "SKIP"
-                    append_log(_pending_signal, action)
+                    append_log(signal, action)
                     git_commit_log()
-                    send_text("Confirmed - Good luck!" if data == "confirm" else "Skipped - Waiting for next signal")
-                    _pending_signal = None
+                    msg = "Confirmed - Good luck!" if data == "confirm" else "Skipped"
+                    # ถ้า queue ยังมี signal รออยู่
+                    if _pending_queue:
+                        msg += f"\n\nNext signal waiting ({len(_pending_queue)} in queue)"
+                        send_text(msg)
+                        send_signal_alert(_pending_queue[0])  # ส่ง signal ถัดไปทันที
+                    else:
+                        send_text(msg)
         except Exception as e:
             log.warning(f"Telegram poll error: {e}")
 
+        # ── Check signals ──
         try:
             dt_utc = datetime.now(timezone.utc)
             if not is_trading_session(dt_utc):
                 log.info(f"Off-session ({dt_utc.strftime('%H:%M UTC')}) - sleeping")
+            elif is_rollover(dt_utc):
+                log.info("Rollover window - sleeping")
             else:
                 df_1h  = fetch_ohlcv("1h", outputsize=100)
                 df_5m  = fetch_ohlcv("5min", outputsize=100)
@@ -418,14 +502,21 @@ def main() -> None:
                     signal = check_signal(ind_1h, ind_5m, dt_utc)
                     if signal:
                         log.info(f"SIGNAL: {signal['direction']} @ {signal['entry']}")
-                        _pending_signal = signal
-                        last_signal_ts  = current_bar_ts
-                        send_signal_alert(signal)
+                        _pending_queue.append(signal)
+                        last_signal_ts = current_bar_ts
+                        # ส่ง Telegram เฉพาะเมื่อไม่มี signal รออยู่
+                        if len(_pending_queue) == 1:
+                            send_signal_alert(signal)
+                        else:
+                            log.info(f"Signal queued ({len(_pending_queue)} total)")
                     else:
+                        streak = get_loss_streak()
                         log.info(
                             f"No signal | ADX={ind_1h['adx']:.1f} | "
-                            f"EMA21={'>' if ind_1h['ema21'] > ind_1h['ema50'] else '<'}EMA50 | "
-                            f"RSI={ind_5m['rsi']:.1f}"
+                            f"EMA={'>' if ind_1h['ema21'] > ind_1h['ema50'] else '<'} | "
+                            f"RSI={ind_5m['rsi']:.1f} | "
+                            f"ATR={ind_5m['atr']:.2f}/{ind_5m['atr_avg']:.2f} | "
+                            f"Streak={streak}L | Queue={len(_pending_queue)}"
                         )
         except Exception as e:
             log.error(f"Data/signal error: {e}", exc_info=True)
