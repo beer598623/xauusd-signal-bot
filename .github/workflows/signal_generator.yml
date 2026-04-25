@@ -1,45 +1,43 @@
-name: XAUUSD Signal Generator
+name: Run Signal Generator (355 min)
 
 on:
   schedule:
-    - cron: "0 8 * * 1-5"
-
+    - cron: "0 0 * * 1-5"   # 07:00 ไทย จันทร์-ศุกร์
+    - cron: "0 6 * * 1-5"   # 13:00 ไทย
+    - cron: "0 12 * * 1-5"  # 19:00 ไทย
+    - cron: "0 18 * * 1-5"  # 01:00 ไทย (วันถัดไป)
   workflow_dispatch:
 
 jobs:
   run-signal-generator:
-    name: Run Signal Generator (355 min)
     runs-on: ubuntu-latest
     timeout-minutes: 365
-
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install requests pandas numpy
 
       - name: Run signal generator (355 minutes)
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
-          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
-          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPO:        ${{ github.repository }}
-          ACCOUNT_BALANCE:    ${{ secrets.ACCOUNT_BALANCE }}
-          RISK_PERCENT:       ${{ secrets.RISK_PERCENT }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:    ${{ secrets.TELEGRAM_CHAT_ID }}
+          TWELVEDATA_API_KEY:  ${{ secrets.TWELVEDATA_API_KEY }}
+          GITHUB_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO:         ${{ github.repository }}
+          ACCOUNT_BALANCE:     ${{ secrets.ACCOUNT_BALANCE }}
+          RISK_PERCENT:        ${{ secrets.RISK_PERCENT }}
         run: python signal_generator.py
 
       - name: Upload performance log artifact
@@ -48,4 +46,4 @@ jobs:
         with:
           name: performance-log-${{ github.run_id }}
           path: performance_log.csv
-          retention-days: 90
+          if-no-files-found: ignore
