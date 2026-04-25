@@ -1,10 +1,10 @@
 """
-XAUUSD MTF BB Pullback - Signal Generator v2.1
-Changes from v2:
-- Fix: git merge -X ours แทน rebase ป้องกัน CSV conflict
-- Fix: Signal queue แทน single pending signal
-- Remove: MAX_TRADES_PER_DAY
-- Keep: Loss streak cooldown
+XAUUSD MTF BB Pullback - Signal Generator v2.2
+Changes from v2.1:
+- LOOP_INTERVAL_SEC 60 -> 300 (5 minutes)
+- SESSIONS_UTC (7,20) -> (0,24) run 24h
+- Add is_market_open() weekend filter
+- TwelveData calls 1,080/day -> 576/day (free tier)
 """
 
 import os
@@ -54,8 +54,8 @@ ATR_EXPANSION_MULT  = 1.2
 MAX_LOSS_STREAK     = 3
 ROLLOVER_START      = (21, 59)
 ROLLOVER_END        = (22, 10)
-SESSIONS_UTC        = [(7, 20)]
-LOOP_INTERVAL_SEC   = 60
+SESSIONS_UTC        = [(0, 24)]   # v2.2: รันตลอด 24 ชั่วโมง
+LOOP_INTERVAL_SEC   = 300         # v2.2: เช็คทุก 5 นาที
 RUNTIME_MINUTES     = 355
 TD_BASE             = "https://api.twelvedata.com"
 SYMBOL              = "XAU/USD"
@@ -174,6 +174,18 @@ def is_trading_session(dt_utc: datetime) -> bool:
     return False
 
 
+def is_market_open(dt_utc: datetime) -> bool:
+    """v2.2: ตลาดทองปิด ศุกร์ 23:00 UTC - อาทิตย์ 23:00 UTC"""
+    wd = dt_utc.weekday()  # 0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Sat 6=Sun
+    if wd == 5:
+        return False                            # Saturday ทั้งวัน
+    if wd == 6:
+        return False                            # Sunday ทั้งวัน
+    if wd == 4 and dt_utc.hour >= 23:
+        return False                            # Friday หลัง 23:00 UTC
+    return True
+
+
 def is_rollover(dt_utc: datetime) -> bool:
     h, m = dt_utc.hour, dt_utc.minute
     if h == ROLLOVER_START[0] and m >= ROLLOVER_START[1]:
@@ -227,6 +239,9 @@ def is_market_active(ind_5m: dict) -> bool:
 
 def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
     if not is_trading_session(dt_utc):
+        return None
+    if not is_market_open(dt_utc):
+        log.debug("SKIP: market closed (weekend)")
         return None
     if is_rollover(dt_utc):
         log.info("SKIP: rollover 21:59-22:10 UTC")
@@ -333,11 +348,11 @@ _pending_queue: list = []
 
 
 def send_signal_alert(signal: dict) -> None:
-    direction = signal["direction"]
-    thai_time = (datetime.fromisoformat(signal["timestamp"])
-                 .replace(tzinfo=timezone.utc) + timedelta(hours=7)
-                 ).strftime("%d/%m/%Y %H:%M")
-    streak = get_loss_streak()
+    direction  = signal["direction"]
+    thai_time  = (datetime.fromisoformat(signal["timestamp"])
+                  .replace(tzinfo=timezone.utc) + timedelta(hours=7)
+                  ).strftime("%d/%m/%Y %H:%M")
+    streak     = get_loss_streak()
     queue_size = len(_pending_queue)
 
     text = (
@@ -432,7 +447,6 @@ def git_commit_log() -> None:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         subprocess.run(["git", "commit", "-m", f"perf: auto-log update {now}"], check=True)
         remote = f"https://x-access-token:{GITHUB_TOKEN}@github.com/{GITHUB_REPO}.git"
-        # Fix: ใช้ merge -X ours แทน rebase ป้องกัน CSV conflict
         subprocess.run(["git", "fetch", remote, "main"], check=True)
         subprocess.run(["git", "merge", "-X", "ours", "FETCH_HEAD",
                         "--no-edit", "-m", "merge: keep local log"], check=True)
@@ -440,14 +454,14 @@ def git_commit_log() -> None:
         log.info("performance_log.csv pushed to GitHub")
     except subprocess.CalledProcessError as e:
         log.error(f"Git commit failed: {e}")
-        # พยายาม abort rebase ถ้าค้างอยู่
         subprocess.run(["git", "rebase", "--abort"], capture_output=True)
+        subprocess.run(["git", "merge", "--abort"], capture_output=True)
 
 
 def main() -> None:
-    log.info("XAUUSD Signal Generator v2.1 starting...")
+    log.info("XAUUSD Signal Generator v2.2 starting...")
     log.info(f"Balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}% | ADX: {ADX_PERIOD}")
-    log.info(f"Loss streak limit: {MAX_LOSS_STREAK}")
+    log.info(f"Loop: {LOOP_INTERVAL_SEC}s | Loss streak limit: {MAX_LOSS_STREAK}")
     ensure_log()
 
     global _pending_queue
@@ -468,17 +482,16 @@ def main() -> None:
                 if "callback_query" in upd and _pending_queue:
                     cb     = upd["callback_query"]
                     data   = cb["data"]
-                    signal = _pending_queue.pop(0)  # ดึง signal แรกสุดออก
+                    signal = _pending_queue.pop(0)
                     answer_callback(cb["id"], "Saved!" if data == "confirm" else "Skipped")
                     action = "CONFIRM" if data == "confirm" else "SKIP"
                     append_log(signal, action)
                     git_commit_log()
                     msg = "Confirmed - Good luck!" if data == "confirm" else "Skipped"
-                    # ถ้า queue ยังมี signal รออยู่
                     if _pending_queue:
                         msg += f"\n\nNext signal waiting ({len(_pending_queue)} in queue)"
                         send_text(msg)
-                        send_signal_alert(_pending_queue[0])  # ส่ง signal ถัดไปทันที
+                        send_signal_alert(_pending_queue[0])
                     else:
                         send_text(msg)
         except Exception as e:
@@ -487,8 +500,8 @@ def main() -> None:
         # ── Check signals ──
         try:
             dt_utc = datetime.now(timezone.utc)
-            if not is_trading_session(dt_utc):
-                log.info(f"Off-session ({dt_utc.strftime('%H:%M UTC')}) - sleeping")
+            if not is_market_open(dt_utc):
+                log.info(f"Market closed (weekend) - sleeping")
             elif is_rollover(dt_utc):
                 log.info("Rollover window - sleeping")
             else:
@@ -504,7 +517,6 @@ def main() -> None:
                         log.info(f"SIGNAL: {signal['direction']} @ {signal['entry']}")
                         _pending_queue.append(signal)
                         last_signal_ts = current_bar_ts
-                        # ส่ง Telegram เฉพาะเมื่อไม่มี signal รออยู่
                         if len(_pending_queue) == 1:
                             send_signal_alert(signal)
                         else:
