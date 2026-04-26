@@ -1,10 +1,15 @@
 """
-XAUUSD MTF BB Pullback - Signal Generator v2.2
-Changes from v2.1:
-- LOOP_INTERVAL_SEC 60 -> 300 (5 minutes)
-- SESSIONS_UTC (7,20) -> (0,24) run 24h
-- Add is_market_open() weekend filter
-- TwelveData calls 1,080/day -> 576/day (free tier)
+XAUUSD MTF BB Pullback - Signal Generator v2.4
+Changes from v2.3:
+- FIX-1: RSI loss=0 → replace 1e-10 (ป้องกัน NaN signal drop เงียบๆ)
+- FIX-2: API retry 3 ครั้ง + exponential backoff
+- FIX-3: Cache 1H data ทุก 60 นาที (ลด API call ~50%)
+- FIX-4: Signal expiry 10 นาที (auto-expire stale signal)
+- FIX-5: เพิ่ม hold_time_min, session, rr_planned ใน log
+- FIX-6: ตัด cron 00:00 และ 18:00 UTC → แก้ใน yml แยก
+         เพิ่ม session guard (6, 18) UTC ใน code เป็น 2nd layer
+- FIX-7: Price-based expiry เพิ่มบน time-based (0.5 ATR threshold)
+- FIX-8: เพิ่ม regime tag "trend"/"range" ใน signal + log
 """
 
 import os
@@ -54,22 +59,50 @@ ATR_EXPANSION_MULT  = 1.2
 MAX_LOSS_STREAK     = 3
 ROLLOVER_START      = (21, 59)
 ROLLOVER_END        = (22, 10)
-SESSIONS_UTC        = [(0, 24)]   # v2.2: รันตลอด 24 ชั่วโมง
-LOOP_INTERVAL_SEC   = 300         # v2.2: เช็คทุก 5 นาที
+
+# FIX-6: session guard เป็น 2nd layer ป้องกัน Asia session
+# Cron จะตัด 00:00 และ 18:00 UTC ออกแล้ว
+# Guard นี้เป็น safety net กรณี workflow_dispatch ผิดเวลา
+ACTIVE_SESSION_UTC  = (6, 18)      # London open → NY close
+
+SESSIONS_UTC        = [(0, 24)]    # keep เดิม (guard จัดการแทน)
+LOOP_INTERVAL_SEC   = 300
 RUNTIME_MINUTES     = 355
+
+# FIX-3: 1H cache — refresh ทุก 60 นาทีเท่านั้น
+H1_CACHE_MINUTES    = 60
+
+# FIX-4/7: Signal expiry — time-based + price-based
+SIGNAL_EXPIRY_MIN       = 10    # หมดอายุถ้าเกิน 10 นาที
+SIGNAL_EXPIRY_ATR_MULT  = 0.5   # หรือถ้าราคาวิ่งเกิน 0.5 ATR จาก entry
+
+# FIX-2: API retry
+API_MAX_RETRIES     = 3
+API_RETRY_DELAY     = 5            # seconds (จะ x2 ทุก retry)
+
 TD_BASE             = "https://api.twelvedata.com"
 SYMBOL              = "XAU/USD"
 LOG_FILE            = Path("performance_log.csv")
 
+# FIX-5: เพิ่ม columns สำหรับ quant analysis
 LOG_COLUMNS = [
     "timestamp", "action", "direction", "entry", "sl", "tp",
     "sl_dist", "lot", "atr", "ema21", "ema50", "adx",
     "rsi", "prev_rsi", "bb_lower", "bb_upper", "be_level",
     "exit_price", "actual_entry",
+    # --- v2.3 additions ---
+    "rr_planned",       # TP_RR ที่ตั้งไว้ ณ วันนั้น
+    "session",          # London / NY / Other
+    "hold_time_min",    # กี่นาทีจาก entry ถึง exit (กรอกตอน exit)
+    # --- v2.4 additions ---
+    "regime",           # FIX-8: "trend" (ADX≥25) / "range" (ADX<25)
 ]
 
 
-def fetch_ohlcv(interval: str, outputsize: int = 200) -> pd.DataFrame:
+# ─────────────────────────────────────────────
+# FIX-2: fetch with retry + exponential backoff
+# ─────────────────────────────────────────────
+def fetch_ohlcv(interval: str, outputsize: int = 100) -> pd.DataFrame:
     url = f"{TD_BASE}/time_series"
     params = {
         "symbol":     SYMBOL,
@@ -78,17 +111,30 @@ def fetch_ohlcv(interval: str, outputsize: int = 200) -> pd.DataFrame:
         "apikey":     TWELVEDATA_API_KEY,
         "order":      "ASC",
     }
-    r = requests.get(url, params=params, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    if "values" not in data:
-        raise ValueError(f"TwelveData error: {data}")
-    df = pd.DataFrame(data["values"])
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    for col in ["open", "high", "low", "close"]:
-        df[col] = df[col].astype(float)
-    df.set_index("datetime", inplace=True)
-    return df
+    last_exc = None
+    delay = API_RETRY_DELAY
+    for attempt in range(1, API_MAX_RETRIES + 1):
+        try:
+            r = requests.get(url, params=params, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            if "values" not in data:
+                raise ValueError(f"TwelveData error: {data}")
+            df = pd.DataFrame(data["values"])
+            df["datetime"] = pd.to_datetime(df["datetime"])
+            for col in ["open", "high", "low", "close"]:
+                df[col] = df[col].astype(float)
+            df.set_index("datetime", inplace=True)
+            return df
+        except Exception as e:
+            last_exc = e
+            if attempt < API_MAX_RETRIES:
+                log.warning(f"fetch_ohlcv [{interval}] attempt {attempt} failed: {e} — retry in {delay}s")
+                time.sleep(delay)
+                delay *= 2   # exponential backoff
+            else:
+                log.error(f"fetch_ohlcv [{interval}] failed after {API_MAX_RETRIES} attempts: {e}")
+    raise last_exc
 
 
 def calc_ema(series: pd.Series, period: int) -> pd.Series:
@@ -101,11 +147,13 @@ def calc_bb(close: pd.Series, period: int = 20, std: float = 2.0):
     return mid + std * sigma, mid, mid - std * sigma
 
 
+# FIX-1: RSI — loss=0 → 1e-10 ป้องกัน NaN เงียบๆ
 def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
     gain  = delta.clip(lower=0).rolling(period).mean()
     loss  = (-delta.clip(upper=0)).rolling(period).mean()
-    rs    = gain / loss.replace(0, np.nan)
+    loss  = loss.replace(0, 1e-10)   # FIX-1: ไม่ให้ NaN
+    rs    = gain / loss
     return 100 - 100 / (1 + rs)
 
 
@@ -167,6 +215,24 @@ def build_indicators_5m(df: pd.DataFrame) -> dict:
     }
 
 
+# FIX-6: session guard helper
+def get_session_name(dt_utc: datetime) -> str:
+    h = dt_utc.hour
+    if 6 <= h < 12:
+        return "London"
+    elif 12 <= h < 18:
+        return "NY"
+    elif 18 <= h < 22:
+        return "NY_Late"
+    else:
+        return "Asia"
+
+
+def is_active_session(dt_utc: datetime) -> bool:
+    """FIX-6: 2nd-layer guard — เฉพาะ London + NY core"""
+    return ACTIVE_SESSION_UTC[0] <= dt_utc.hour < ACTIVE_SESSION_UTC[1]
+
+
 def is_trading_session(dt_utc: datetime) -> bool:
     for start, end in SESSIONS_UTC:
         if start <= dt_utc.hour < end:
@@ -175,14 +241,13 @@ def is_trading_session(dt_utc: datetime) -> bool:
 
 
 def is_market_open(dt_utc: datetime) -> bool:
-    """v2.2: ตลาดทองปิด ศุกร์ 23:00 UTC - อาทิตย์ 23:00 UTC"""
-    wd = dt_utc.weekday()  # 0=Mon 1=Tue 2=Wed 3=Thu 4=Fri 5=Sat 6=Sun
+    wd = dt_utc.weekday()
     if wd == 5:
-        return False                            # Saturday ทั้งวัน
+        return False
     if wd == 6:
-        return False                            # Sunday ทั้งวัน
+        return False
     if wd == 4 and dt_utc.hour >= 23:
-        return False                            # Friday หลัง 23:00 UTC
+        return False
     return True
 
 
@@ -233,15 +298,46 @@ def is_market_active(ind_5m: dict) -> bool:
     atr     = ind_5m["atr"]
     atr_avg = ind_5m["atr_avg"]
     if atr_avg <= 0 or pd.isna(atr_avg):
-        return True
+        return False   # fail-safe (ไม่ใช่ True เหมือนเดิม)
     return atr >= atr_avg * ATR_EXPANSION_MULT
 
 
+# FIX-4/7: ตรวจ signal expiry — time-based + price-based
+def is_signal_expired(signal: dict, current_price: float | None = None) -> bool:
+    """
+    Expire signal ถ้า:
+    (A) อายุเกิน SIGNAL_EXPIRY_MIN นาที  — time-based
+    (B) ราคาตลาดวิ่งห่างจาก entry เกิน 0.5 ATR — price-based
+        (normalize ตาม volatility วันนั้น ดีกว่าตัวเลขคงที่)
+    """
+    try:
+        ts  = datetime.fromisoformat(signal["timestamp"]).replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+        if age > SIGNAL_EXPIRY_MIN:
+            return True   # (A) time expired
+    except:
+        return True       # อ่าน timestamp ไม่ได้ = expired
+
+    # (B) price-based: ต้องการ current_price และ ATR
+    if current_price is not None:
+        try:
+            atr       = float(signal.get("atr", 0))
+            entry     = float(signal["entry"])
+            threshold = atr * SIGNAL_EXPIRY_ATR_MULT
+            if threshold > 0 and abs(current_price - entry) > threshold:
+                return True
+        except:
+            pass   # ถ้าอ่านค่าไม่ได้ ไม่ expire จาก price check
+
+    return False
+
+
 def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
-    if not is_trading_session(dt_utc):
-        return None
     if not is_market_open(dt_utc):
-        log.debug("SKIP: market closed (weekend)")
+        return None
+    # FIX-6: session guard
+    if not is_active_session(dt_utc):
+        log.info(f"SKIP: outside active session ({get_session_name(dt_utc)}, {dt_utc.hour:02d}:xx UTC)")
         return None
     if is_rollover(dt_utc):
         log.info("SKIP: rollover 21:59-22:10 UTC")
@@ -260,6 +356,8 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
 
     atr     = ind_5m["atr"]
     bullish = ind_1h["ema21"] > ind_1h["ema50"]
+    session = get_session_name(dt_utc)          # FIX-5
+    regime  = "trend" if ind_1h["adx"] >= 25 else "range"  # FIX-8
 
     if bullish:
         if ind_5m["prev_low"] > ind_5m["prev_bb_lower"]: return None
@@ -270,17 +368,20 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
         sl_dist  = ind_5m["close"] - sl_price
         if sl_dist > MAX_SL_MULT * atr: return None
         return {
-            "direction": "BUY",
-            "entry":    round(ind_5m["close"], 2),
-            "sl":       round(sl_price, 2),
-            "tp":       round(ind_5m["close"] + TP_RR * sl_dist, 2),
-            "sl_dist":  round(sl_dist, 2),
-            "be_level": round(ind_5m["close"] + BE_TRIGGER_MULT * atr, 2),
-            "lot":      calc_lot_size(sl_dist),
-            "atr":      round(atr, 2),
+            "direction":  "BUY",
+            "entry":      round(ind_5m["close"], 2),
+            "sl":         round(sl_price, 2),
+            "tp":         round(ind_5m["close"] + TP_RR * sl_dist, 2),
+            "sl_dist":    round(sl_dist, 2),
+            "be_level":   round(ind_5m["close"] + BE_TRIGGER_MULT * atr, 2),
+            "lot":        calc_lot_size(sl_dist),
+            "atr":        round(atr, 2),
+            "rr_planned": TP_RR,        # FIX-5
+            "session":    session,      # FIX-5
+            "regime":     regime,       # FIX-8
             **ind_1h,
             **{f"5m_{k}": v for k, v in ind_5m.items()},
-            "timestamp": dt_utc.isoformat(),
+            "timestamp":  dt_utc.isoformat(),
         }
     else:
         if ind_5m["prev_high"] < ind_5m["prev_bb_upper"]: return None
@@ -291,17 +392,20 @@ def check_signal(ind_1h: dict, ind_5m: dict, dt_utc: datetime) -> dict | None:
         sl_dist  = sl_price - ind_5m["close"]
         if sl_dist > MAX_SL_MULT * atr: return None
         return {
-            "direction": "SELL",
-            "entry":    round(ind_5m["close"], 2),
-            "sl":       round(sl_price, 2),
-            "tp":       round(ind_5m["close"] - TP_RR * sl_dist, 2),
-            "sl_dist":  round(sl_dist, 2),
-            "be_level": round(ind_5m["close"] - BE_TRIGGER_MULT * atr, 2),
-            "lot":      calc_lot_size(sl_dist),
-            "atr":      round(atr, 2),
+            "direction":  "SELL",
+            "entry":      round(ind_5m["close"], 2),
+            "sl":         round(sl_price, 2),
+            "tp":         round(ind_5m["close"] - TP_RR * sl_dist, 2),
+            "sl_dist":    round(sl_dist, 2),
+            "be_level":   round(ind_5m["close"] - BE_TRIGGER_MULT * atr, 2),
+            "lot":        calc_lot_size(sl_dist),
+            "atr":        round(atr, 2),
+            "rr_planned": TP_RR,        # FIX-5
+            "session":    session,      # FIX-5
+            "regime":     regime,       # FIX-8
             **ind_1h,
             **{f"5m_{k}": v for k, v in ind_5m.items()},
-            "timestamp": dt_utc.isoformat(),
+            "timestamp":  dt_utc.isoformat(),
         }
 
 
@@ -353,11 +457,12 @@ def send_signal_alert(signal: dict) -> None:
                   .replace(tzinfo=timezone.utc) + timedelta(hours=7)
                   ).strftime("%d/%m/%Y %H:%M")
     streak     = get_loss_streak()
+    session    = signal.get("session", "")
     queue_size = len(_pending_queue)
 
     text = (
         f"XAUUSD {direction} SIGNAL\n"
-        f"Time: {thai_time} (Thai)\n\n"
+        f"Time: {thai_time} (Thai) | Session: {session}\n\n"
         f"Entry: {signal['entry']}\n"
         f"Stop Loss: {signal['sl']} ({signal['sl_dist']} pts)\n"
         f"Take Profit: {signal['tp']} (RR 1:{TP_RR})\n"
@@ -374,8 +479,8 @@ def send_signal_alert(signal: dict) -> None:
         "text":       text,
         "reply_markup": json.dumps({
             "inline_keyboard": [[
-                {"text": "Confirm", "callback_data": "confirm"},
-                {"text": "Skip",    "callback_data": "skip"},
+                {"text": "✅ Confirm", "callback_data": "confirm"},
+                {"text": "❌ Skip",    "callback_data": "skip"},
             ]]
         }),
     }
@@ -404,6 +509,32 @@ def ensure_log() -> None:
     if not LOG_FILE.exists():
         with open(LOG_FILE, "w", newline="") as f:
             csv.DictWriter(f, fieldnames=LOG_COLUMNS).writeheader()
+    else:
+        # migrate: เพิ่ม column ใหม่ถ้า CSV เก่าไม่มี
+        with open(LOG_FILE, "r", newline="") as f:
+            existing_cols = csv.DictReader(f).fieldnames or []
+        new_cols = [c for c in LOG_COLUMNS if c not in existing_cols]
+        if new_cols:
+            _migrate_csv(new_cols)
+
+
+def _migrate_csv(new_cols: list) -> None:
+    """เพิ่ม columns ใหม่เข้า CSV เก่าโดยไม่ลบข้อมูล"""
+    import shutil
+    backup = LOG_FILE.with_suffix(".bak.csv")
+    shutil.copy(LOG_FILE, backup)
+    rows = []
+    with open(LOG_FILE, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            for col in new_cols:
+                row.setdefault(col, "")
+            rows.append(row)
+    with open(LOG_FILE, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=LOG_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    log.info(f"CSV migrated: added columns {new_cols} | backup → {backup}")
 
 
 def append_log(signal: dict, action: str) -> None:
@@ -428,10 +559,16 @@ def append_log(signal: dict, action: str) -> None:
         "be_level":     signal.get("be_level"),
         "exit_price":   "",
         "actual_entry": "",
+        # v2.3
+        "rr_planned":   signal.get("rr_planned", TP_RR),
+        "session":      signal.get("session", ""),
+        "hold_time_min": "",          # กรอกตอน exit
+        # v2.4
+        "regime":       signal.get("regime", ""),   # FIX-8
     }
     with open(LOG_FILE, "a", newline="") as f:
         csv.DictWriter(f, fieldnames=LOG_COLUMNS).writerow(row)
-    log.info(f"Log written: {action} | {signal.get('direction')} @ {signal.get('entry')}")
+    log.info(f"Log written: {action} | {signal.get('direction')} @ {signal.get('entry')} | {row['session']}")
 
 
 def git_commit_log() -> None:
@@ -459,9 +596,10 @@ def git_commit_log() -> None:
 
 
 def main() -> None:
-    log.info("XAUUSD Signal Generator v2.2 starting...")
-    log.info(f"Balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}% | ADX: {ADX_PERIOD}")
-    log.info(f"Loop: {LOOP_INTERVAL_SEC}s | Loss streak limit: {MAX_LOSS_STREAK}")
+    log.info("XAUUSD Signal Generator v2.4 starting...")
+    log.info(f"Balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}% | ADX min: {ADX_MIN}")
+    log.info(f"Loop: {LOOP_INTERVAL_SEC}s | Active session: {ACTIVE_SESSION_UTC[0]}:00–{ACTIVE_SESSION_UTC[1]}:00 UTC")
+    log.info(f"Signal expiry: {SIGNAL_EXPIRY_MIN} min | Loss streak limit: {MAX_LOSS_STREAK}")
     ensure_log()
 
     global _pending_queue
@@ -471,6 +609,12 @@ def main() -> None:
     deadline       = start_time + RUNTIME_MINUTES * 60
     last_update_id = 0
     last_signal_ts = None
+
+    # FIX-3: 1H cache
+    df_1h_cache:    pd.DataFrame | None = None
+    last_1h_fetch:  datetime | None     = None
+    # FIX-7: เก็บ price ล่าสุดที่รู้ ใช้ใน price-based expiry check
+    _last_price:    float | None        = None
 
     while time.time() < deadline:
         loop_start = time.time()
@@ -483,15 +627,32 @@ def main() -> None:
                     cb     = upd["callback_query"]
                     data   = cb["data"]
                     signal = _pending_queue.pop(0)
+
+                    # FIX-4/7: ตรวจ expiry — time + price based
+                    # _last_price อัปเดตทุก loop จาก df_5m (ดูใน signal section)
+                    if is_signal_expired(signal, _last_price):
+                        answer_callback(cb["id"], "Signal expired!")
+                        send_text(
+                            f"⚠️ Signal {signal['direction']} @ {signal['entry']} หมดอายุแล้ว\n"
+                            f"(เกิน {SIGNAL_EXPIRY_MIN} นาที — ไม่บันทึก)"
+                        )
+                        log.warning(f"Expired signal discarded: {signal['direction']} @ {signal['entry']}")
+                        continue
+
                     answer_callback(cb["id"], "Saved!" if data == "confirm" else "Skipped")
                     action = "CONFIRM" if data == "confirm" else "SKIP"
                     append_log(signal, action)
                     git_commit_log()
-                    msg = "Confirmed - Good luck!" if data == "confirm" else "Skipped"
+                    msg = "✅ Confirmed - Good luck!" if data == "confirm" else "❌ Skipped"
                     if _pending_queue:
-                        msg += f"\n\nNext signal waiting ({len(_pending_queue)} in queue)"
-                        send_text(msg)
-                        send_signal_alert(_pending_queue[0])
+                        # FIX-4/7: ทำความสะอาด expired signals ออกจาก queue ก่อน
+                        _pending_queue = [s for s in _pending_queue if not is_signal_expired(s, _last_price)]
+                        if _pending_queue:
+                            msg += f"\n\nNext signal waiting ({len(_pending_queue)} in queue)"
+                            send_text(msg)
+                            send_signal_alert(_pending_queue[0])
+                        else:
+                            send_text(msg + "\n\n(สัญญาณที่รออยู่หมดอายุแล้ว)")
                     else:
                         send_text(msg)
         except Exception as e:
@@ -501,20 +662,34 @@ def main() -> None:
         try:
             dt_utc = datetime.now(timezone.utc)
             if not is_market_open(dt_utc):
-                log.info(f"Market closed (weekend) - sleeping")
+                log.info("Market closed (weekend) - sleeping")
             elif is_rollover(dt_utc):
                 log.info("Rollover window - sleeping")
+            elif not is_active_session(dt_utc):
+                # FIX-6: Asia / late night — skip ประหยัด API
+                log.info(f"Outside active session ({get_session_name(dt_utc)}) - sleeping")
             else:
-                df_1h  = fetch_ohlcv("1h", outputsize=100)
+                # FIX-3: ดึง 1H เฉพาะตอนเริ่ม หรือเมื่อผ่านไป 60 นาที
+                need_1h_refresh = (
+                    df_1h_cache is None or
+                    last_1h_fetch is None or
+                    (dt_utc - last_1h_fetch).total_seconds() >= H1_CACHE_MINUTES * 60
+                )
+                if need_1h_refresh:
+                    df_1h_cache   = fetch_ohlcv("1h", outputsize=100)
+                    last_1h_fetch = dt_utc
+                    log.info("1H data refreshed")
+
                 df_5m  = fetch_ohlcv("5min", outputsize=100)
-                ind_1h = build_indicators_1h(df_1h)
+                ind_1h = build_indicators_1h(df_1h_cache)
                 ind_5m = build_indicators_5m(df_5m)
+                _last_price = ind_5m["close"]   # FIX-7: อัปเดตทุก loop
 
                 current_bar_ts = df_5m.index[-1].isoformat()
                 if current_bar_ts != last_signal_ts:
                     signal = check_signal(ind_1h, ind_5m, dt_utc)
                     if signal:
-                        log.info(f"SIGNAL: {signal['direction']} @ {signal['entry']}")
+                        log.info(f"SIGNAL: {signal['direction']} @ {signal['entry']} | {signal['session']}")
                         _pending_queue.append(signal)
                         last_signal_ts = current_bar_ts
                         if len(_pending_queue) == 1:
@@ -528,7 +703,8 @@ def main() -> None:
                             f"EMA={'>' if ind_1h['ema21'] > ind_1h['ema50'] else '<'} | "
                             f"RSI={ind_5m['rsi']:.1f} | "
                             f"ATR={ind_5m['atr']:.2f}/{ind_5m['atr_avg']:.2f} | "
-                            f"Streak={streak}L | Queue={len(_pending_queue)}"
+                            f"Streak={streak}L | Queue={len(_pending_queue)} | "
+                            f"Session={get_session_name(dt_utc)}"
                         )
         except Exception as e:
             log.error(f"Data/signal error: {e}", exc_info=True)
