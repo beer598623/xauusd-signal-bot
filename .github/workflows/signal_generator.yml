@@ -2,10 +2,10 @@ name: Run Signal Generator (355 min)
 
 on:
   schedule:
-    - cron: "0 0 * * 1-5"   # 07:00 ไทย จันทร์-ศุกร์
-    - cron: "0 6 * * 1-5"   # 13:00 ไทย
-    - cron: "0 12 * * 1-5"  # 19:00 ไทย
-    - cron: "0 18 * * 1-5"  # 01:00 ไทย (วันถัดไป)
+    # FIX-6: ตัด 00:00 UTC (Asia deep) และ 18:00 UTC (NY close) ออก
+    # เหลือเฉพาะ 2 session ที่มี edge จริง:
+    - cron: "0 6 * * 1-5"    # 06:00 UTC = 13:00 ไทย (London open)
+    - cron: "0 12 * * 1-5"   # 12:00 UTC = 19:00 ไทย (NY open)
   workflow_dispatch:
 
 jobs:
