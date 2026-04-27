@@ -7,7 +7,13 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Noto+Sans+Thai:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-:root{--bg:#F7F6F3;--sur:#FFF;--bdr:#E8E6E1;--bdr2:#D4D0C8;--tx:#1A1916;--dim:#8A8780;--fnt:#C4C2BC;--ac:#1A1916;--g:#2D6A4F;--gbg:#F0F7F4;--r:#9B2335;--rbg:#FDF2F3;--gld:#8B6914;--mo:'DM Mono',monospace;--sa:'Noto Sans Thai',sans-serif}
+:root{
+  --bg:#F7F6F3;--sur:#FFF;--bdr:#E8E6E1;--bdr2:#D4D0C8;
+  --tx:#1A1916;--dim:#8A8780;--fnt:#C4C2BC;--ac:#1A1916;
+  --g:#2D6A4F;--gbg:#F0F7F4;--r:#9B2335;--rbg:#FDF2F3;
+  --gld:#8B6914;--gldbg:#FBF7EE;
+  --mo:'DM Mono',monospace;--sa:'Noto Sans Thai',sans-serif
+}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg);color:var(--tx);font-family:var(--sa);line-height:1.6;padding-bottom:80px}
 header{padding:20px 20px 14px;border-bottom:1px solid var(--bdr);background:var(--sur)}
@@ -60,16 +66,40 @@ main{padding:16px}
 .badge.buy{background:var(--gbg);color:var(--g)}.badge.sell{background:var(--rbg);color:var(--r)}
 .badge.conf{background:rgba(45,106,79,.1);color:var(--g)}.badge.skip{background:var(--bg);color:var(--fnt)}
 .empty{text-align:center;padding:40px 20px;color:var(--dim);font-family:var(--mo);font-size:12px}
+/* ── insight card ── */
 .ins{background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:14px;margin-bottom:10px}
 .ins-t{font-family:var(--mo);font-size:11px;font-weight:500;margin-bottom:6px}
 .ins-b{font-size:13px;color:var(--dim);line-height:1.7}
 .ins-v{color:var(--tx);font-weight:500}
+/* ── NEW: alert / verdict cards ── */
+.verdict{border-radius:8px;padding:14px 16px;margin-bottom:12px;display:flex;align-items:flex-start;gap:12px}
+.verdict.ok{background:var(--gbg);border:1px solid rgba(45,106,79,.25)}
+.verdict.warn{background:#FFFBF0;border:1px solid rgba(139,105,20,.3)}
+.verdict.bad{background:var(--rbg);border:1px solid rgba(155,35,53,.25)}
+.verdict.info{background:#F5F5FF;border:1px solid rgba(80,80,180,.2)}
+.verdict-ico{font-size:18px;flex-shrink:0;margin-top:1px}
+.verdict-body{}
+.verdict-title{font-family:var(--mo);font-size:11px;font-weight:500;margin-bottom:3px}
+.verdict-desc{font-family:var(--mo);font-size:11px;color:var(--dim);line-height:1.6}
+.verdict-desc b{color:var(--tx)}
+/* ── stat row inside insight ── */
+.si-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--bdr);font-family:var(--mo);font-size:11px}
+.si-row:last-child{border:none}
+.si-label{color:var(--dim)}
+.si-val{font-weight:500}
+/* ── regime compare ── */
+.regime-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.regime-card{background:var(--bg);border:1px solid var(--bdr);border-radius:6px;padding:12px}
+.regime-title{font-family:var(--mo);font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+.regime-stat{font-family:var(--mo);font-size:11px;color:var(--dim);margin-top:3px}
+.regime-wr{font-family:var(--mo);font-size:22px;font-weight:500;letter-spacing:-.5px}
+/* ── progress bar row ── */
 .pr{display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .pl{font-family:var(--mo);font-size:10px;color:var(--dim);width:60px;flex-shrink:0}
 .pb2{flex:1;height:6px;background:var(--bdr);border-radius:3px;overflow:hidden}
 .pf{height:100%;border-radius:3px;transition:width .8s}
 .pv{font-family:var(--mo);font-size:10px;color:var(--dim);width:40px;text-align:right;flex-shrink:0}
-/* Trade input */
+/* ── Trade input (unchanged) ── */
 .wd-card{background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:14px;margin-bottom:12px}
 .wd-item{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;background:var(--bg);border-radius:4px;font-family:var(--mo);font-size:12px;margin-top:7px}
 .wd-amt{color:var(--r)}.wd-dt{color:var(--fnt);font-size:10px;margin-top:2px}
@@ -112,7 +142,7 @@ main{padding:16px}
 <body>
 
 <header>
-  <div class="ht"><div class="sn">XAUUSD · MTF BB PULLBACK</div><div class="dot"></div></div>
+  <div class="ht"><div class="sn">XAUUSD · MTF BB PULLBACK v2.4</div><div class="dot"></div></div>
   <h1>Performance Dashboard</h1>
 </header>
 
@@ -149,16 +179,18 @@ main{padding:16px}
 </div>
 
 <nav class="tabs">
-  <button class="tab on" onclick="showTab('log',this)">Trade Log</button>
-  <button class="tab" onclick="showTab('overview',this)">Overview</button>
-  <button class="tab" onclick="showTab('quality',this)">Signal Quality</button>
-  <button class="tab" onclick="showTab('missed',this)">Missed</button>
-  <button class="tab" onclick="showTab('risk',this)">Risk</button>
-  <button class="tab" onclick="showTab('behavior',this)">Behavior</button>
-  <button class="tab" onclick="showTab('lab',this)">Strategy Lab</button>
+  <button class="tab on"  onclick="showTab('log',this)">Trade Log</button>
+  <button class="tab"     onclick="showTab('overview',this)">Overview</button>
+  <button class="tab"     onclick="showTab('quality',this)">Signal Quality</button>
+  <button class="tab"     onclick="showTab('missed',this)">Missed</button>
+  <button class="tab"     onclick="showTab('risk',this)">Risk</button>
+  <button class="tab"     onclick="showTab('behavior',this)">Behavior</button>
+  <button class="tab"     onclick="showTab('lab',this)">Strategy Lab</button>
 </nav>
 
-<!-- ══ TRADE LOG ══ -->
+<!-- ══════════════════════════════════════════
+     TAB 1 — TRADE LOG
+══════════════════════════════════════════ -->
 <div id="tab-log" class="page on">
 <main>
   <div class="bal-card">
@@ -179,7 +211,6 @@ main{padding:16px}
       <div class="bi">Withdrawn <span id="bl-wd">$0</span></div>
     </div>
   </div>
-
   <div class="shd">Withdrawal</div>
   <div class="wd-card">
     <div class="lbl">บันทึกการถอนเงิน (USD)</div>
@@ -190,7 +221,6 @@ main{padding:16px}
     </div>
     <div id="wdlist"></div>
   </div>
-
   <div class="shd">Signal Log</div>
   <div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto">
     <div class="ft on" onclick="setLF('ALL',this)">All</div>
@@ -206,9 +236,14 @@ main{padding:16px}
 </main>
 </div>
 
-<!-- ══ OVERVIEW ══ -->
+<!-- ══════════════════════════════════════════
+     TAB 2 — OVERVIEW  (+Expectancy card)
+══════════════════════════════════════════ -->
 <div id="tab-overview" class="page">
 <main>
+  <!-- NEW: Expectancy verdict -->
+  <div id="ov-verdict"></div>
+
   <div class="g2">
     <div class="sc"><div class="sl">Win Rate</div><div class="sv g" id="ov-wr">-</div><div class="wbar"><div class="wfill" id="ov-wf" style="width:0"></div></div></div>
     <div class="sc"><div class="sl">Profit Factor</div><div class="sv gld" id="ov-pf">-</div><div class="ss">gross win / loss</div></div>
@@ -217,6 +252,10 @@ main{padding:16px}
     <div class="sc"><div class="sl">Avg Win</div><div class="sv g" id="ov-aw">-</div><div class="ss">per trade</div></div>
     <div class="sc"><div class="sl">Avg Loss</div><div class="sv r" id="ov-al">-</div><div class="ss">per trade</div></div>
   </div>
+
+  <!-- NEW: Expectancy breakdown card -->
+  <div id="ov-exp-card"></div>
+
   <div class="cc"><div class="cc-t">Equity Curve</div><canvas id="ch-eq"></canvas></div>
   <div class="cc"><div class="cc-t">Monthly PnL</div><canvas id="ch-mon"></canvas></div>
   <div class="shd">Direction</div>
@@ -227,7 +266,9 @@ main{padding:16px}
 </main>
 </div>
 
-<!-- ══ SIGNAL QUALITY ══ -->
+<!-- ══════════════════════════════════════════
+     TAB 3 — SIGNAL QUALITY  (+Regime breakdown)
+══════════════════════════════════════════ -->
 <div id="tab-quality" class="page">
 <main>
   <div class="g2">
@@ -238,6 +279,11 @@ main{padding:16px}
     <div class="sc"><div class="sl">SL dist (win)</div><div class="sv g" id="sq-sw">-</div><div class="ss">pts</div></div>
     <div class="sc"><div class="sl">SL dist (loss)</div><div class="sv r" id="sq-sl2">-</div><div class="ss">pts</div></div>
   </div>
+
+  <!-- NEW: Regime breakdown -->
+  <div class="shd">Regime Breakdown</div>
+  <div id="sq-regime"></div>
+
   <div class="cc"><div class="cc-t">ADX Distribution</div><canvas id="ch-adx"></canvas></div>
   <div class="cc"><div class="cc-t">RSI at Entry</div><canvas id="ch-rsi"></canvas></div>
   <div class="cc"><div class="cc-t">Win Rate by Hour (Thai)</div><canvas id="ch-hour"></canvas></div>
@@ -246,15 +292,22 @@ main{padding:16px}
 </main>
 </div>
 
-<!-- ══ MISSED ══ -->
+<!-- ══════════════════════════════════════════
+     TAB 4 — MISSED  (+Skip Decision Quality)
+══════════════════════════════════════════ -->
 <div id="tab-missed" class="page">
 <main>
   <div class="g2">
     <div class="sc"><div class="sl">Total Skipped</div><div class="sv" id="ms-tot">-</div></div>
     <div class="sc"><div class="sl">Skip Rate</div><div class="sv r" id="ms-rate">-</div><div class="wbar"><div class="wfill" id="ms-fill" style="width:0;background:var(--r)"></div></div></div>
-    <div class="sc"><div class="sl">Est. Missed PnL</div><div class="sv" id="ms-pnl">-</div><div class="ss">theoretical TP hit</div></div>
+    <div class="sc"><div class="sl">Est. Missed PnL</div><div class="sv" id="ms-pnl">-</div><div class="ss">if all TP hit</div></div>
     <div class="sc"><div class="sl">BUY / SELL Skip</div><div class="sv" id="ms-dir">-</div></div>
   </div>
+
+  <!-- NEW: Skip decision quality -->
+  <div class="shd">Skip Decision Quality</div>
+  <div id="ms-quality"></div>
+
   <div class="cc"><div class="cc-t">Confirmed vs Skipped by Month</div><canvas id="ch-skip"></canvas></div>
   <div class="shd">Skipped Log</div>
   <div style="overflow-x:auto">
@@ -264,9 +317,14 @@ main{padding:16px}
 </main>
 </div>
 
-<!-- ══ RISK ══ -->
+<!-- ══════════════════════════════════════════
+     TAB 5 — RISK  (+DD alert banner)
+══════════════════════════════════════════ -->
 <div id="tab-risk" class="page">
 <main>
+  <!-- NEW: DD alert banner -->
+  <div id="rk-alert"></div>
+
   <div class="g2">
     <div class="sc"><div class="sl">Max Drawdown</div><div class="sv r" id="rk-mdd">-</div></div>
     <div class="sc"><div class="sl">Current DD</div><div class="sv" id="rk-cdd">-</div></div>
@@ -276,18 +334,25 @@ main{padding:16px}
     <div class="sc"><div class="sl">Risk/Trade</div><div class="sv" id="rk-rt">-</div></div>
   </div>
   <div class="cc"><div class="cc-t">Drawdown Chart</div><canvas id="ch-dd"></canvas></div>
-  <div class="shd">Loss Streak</div><div id="rk-streak"></div>
+  <div class="shd">Loss Streak Analysis</div><div id="rk-streak"></div>
   <div class="shd">Worst Days</div><div id="rk-days"></div>
 </main>
 </div>
 
-<!-- ══ BEHAVIOR ══ -->
+<!-- ══════════════════════════════════════════
+     TAB 6 — BEHAVIOR  (+Session Performance)
+══════════════════════════════════════════ -->
 <div id="tab-behavior" class="page">
 <main>
   <div class="g2">
     <div class="sc"><div class="sl">Confirm Rate</div><div class="sv g" id="bh-cr">-</div><div class="wbar"><div class="wfill" id="bh-crf" style="width:0"></div></div></div>
     <div class="sc"><div class="sl">Profitable Confirms</div><div class="sv g" id="bh-pc">-</div></div>
   </div>
+
+  <!-- NEW: Session performance -->
+  <div class="shd">Session Performance</div>
+  <div id="bh-session"></div>
+
   <div class="cc"><div class="cc-t">Hourly Activity (Thai)</div><canvas id="ch-bh"></canvas></div>
   <div class="cc"><div class="cc-t">Day of Week</div><canvas id="ch-dow"></canvas></div>
   <div class="cc"><div class="cc-t">Actual vs Signal Entry Diff</div><canvas id="ch-slip"></canvas></div>
@@ -295,13 +360,19 @@ main{padding:16px}
 </main>
 </div>
 
-<!-- ══ STRATEGY LAB ══ -->
+<!-- ══════════════════════════════════════════
+     TAB 7 — STRATEGY LAB  (+Auto Recommendation)
+══════════════════════════════════════════ -->
 <div id="tab-lab" class="page">
 <main>
   <div class="ins">
     <div class="ins-t">Strategy Lab</div>
     <div class="ins-b">วิเคราะห์ edge จาก trades จริง ต้องการ closed trades อย่างน้อย <span class="ins-v">5 trades</span></div>
   </div>
+
+  <!-- NEW: Auto recommendation -->
+  <div id="lab-recommend"></div>
+
   <div class="shd">ADX Threshold Analysis</div>
   <div id="lab-adx" style="background:var(--sur);border:1px solid var(--bdr);border-radius:8px;padding:14px;overflow-x:auto"></div>
   <div class="shd">Expected PnL by Hour</div>
@@ -327,11 +398,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   const t=localStorage.getItem('gh_token');if(t) document.getElementById('gh-token').value=t;
 });
 
-function saveTok(){
-  const t=document.getElementById('gh-token').value.trim();
-  if(t) localStorage.setItem('gh_token',t);
-  setS('Token saved','ok');setTimeout(()=>setS('พร้อมใช้งาน','ok'),1500);
-}
+function saveTok(){const t=document.getElementById('gh-token').value.trim();if(t) localStorage.setItem('gh_token',t);setS('Token saved','ok');setTimeout(()=>setS('พร้อมใช้งาน','ok'),1500);}
 function getTok(){return localStorage.getItem('gh_token')||'';}
 function getSB(){return parseFloat(localStorage.getItem(SB_KEY)||'100');}
 function getWD(){try{return JSON.parse(localStorage.getItem('withdrawals')||'[]')}catch{return[]}}
@@ -353,6 +420,10 @@ function fmtM(ts){return new Date(ts).toLocaleDateString('en',{month:'short',yea
 function avg(a){return a.length?a.reduce((s,v)=>s+v,0)/a.length:null;}
 function sum(a){return a.reduce((s,v)=>s+v,0);}
 
+function verdictCard(type,icon,title,desc){
+  return`<div class="verdict ${type}"><div class="verdict-ico">${icon}</div><div class="verdict-body"><div class="verdict-title">${title}</div><div class="verdict-desc">${desc}</div></div></div>`;
+}
+
 function parseRepo(url){
   const m=url.match(/raw\.githubusercontent\.com\/([^/]+\/[^/]+)\/[^/]+\/(.+)/);
   if(m) return{repo:m[1],path:m[2]};
@@ -360,20 +431,13 @@ function parseRepo(url){
   if(m2) return{repo:m2[1],path:m2[2]};return null;
 }
 async function fetchSHA(repo,path){
-  try{
-    const r=await fetch(`https://api.github.com/repos/${repo}/contents/${path}`,{headers:{'Authorization':'token '+getTok(),'Accept':'application/vnd.github.v3+json'}});
-    if(r.ok){const d=await r.json();CSVSHA=d.sha;}
-  }catch(e){console.warn(e);}
+  try{const r=await fetch(`https://api.github.com/repos/${repo}/contents/${path}`,{headers:{'Authorization':'token '+getTok(),'Accept':'application/vnd.github.v3+json'}});if(r.ok){const d=await r.json();CSVSHA=d.sha;}}catch(e){console.warn(e);}
 }
 async function pushCSV(content){
   const url=document.getElementById('csv-url').value.trim();
   const info=parseRepo(url);if(!info) throw new Error('parse repo failed');
   const tok=getTok();if(!tok) throw new Error('ไม่พบ Token');
-  const r=await fetch(`https://api.github.com/repos/${info.repo}/contents/${info.path}`,{
-    method:'PUT',
-    headers:{'Authorization':'token '+tok,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
-    body:JSON.stringify({message:'perf: update result '+new Date().toISOString().slice(0,16)+' UTC',content:btoa(unescape(encodeURIComponent(content))),sha:CSVSHA})
-  });
+  const r=await fetch(`https://api.github.com/repos/${info.repo}/contents/${info.path}`,{method:'PUT',headers:{'Authorization':'token '+tok,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},body:JSON.stringify({message:'perf: update result '+new Date().toISOString().slice(0,16)+' UTC',content:btoa(unescape(encodeURIComponent(content))),sha:CSVSHA})});
   if(!r.ok){const e=await r.json();throw new Error(e.message||r.status);}
   const d=await r.json();CSVSHA=d.content.sha;
 }
@@ -411,10 +475,7 @@ function csvStr(rows){
   return[h.join(','),...rows.map(r=>h.map(k=>r[k]||'').join(','))].join('\n')+'\n';
 }
 
-function setP(p,el){
-  PERIOD=p;document.querySelectorAll('.fbar .ft').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on');applyPeriod();
-}
+function setP(p,el){PERIOD=p;document.querySelectorAll('.fbar .ft').forEach(t=>t.classList.remove('on'));el.classList.add('on');applyPeriod();}
 function applyPeriod(){
   const now=new Date();
   FILT=AT_ALL.filter(t=>{
@@ -438,10 +499,7 @@ function showTab(id,el){
   renderAll();
 }
 
-function renderAll(){
-  renderLog();renderOverview();renderQuality();
-  renderMissed();renderRisk();renderBehavior();renderLab();
-}
+function renderAll(){renderLog();renderOverview();renderQuality();renderMissed();renderRisk();renderBehavior();renderLab();}
 
 function mkC(id,type,data,extra){
   if(charts[id]) charts[id].destroy();
@@ -454,23 +512,13 @@ function mkC(id,type,data,extra){
   }});
 }
 
-// ── TRADE LOG ──
-function setLF(f,el){
-  LF=f;CP=1;
-  document.querySelectorAll('#tab-log .ft').forEach(t=>t.classList.remove('on'));
-  el.classList.add('on');renderLog();
-}
+/* ─── TRADE LOG ─── */
+function setLF(f,el){LF=f;CP=1;document.querySelectorAll('#tab-log .ft').forEach(t=>t.classList.remove('on'));el.classList.add('on');renderLog();}
 function renderLog(){
   const wds=getWD();
-  document.getElementById('wdlist').innerHTML=wds.map(w=>`
-    <div class="wd-item">
-      <div><div class="wd-amt">-$${w.amount.toFixed(2)}</div><div class="wd-dt">${w.note?w.note+' - ':''}${fmtD(w.date)}</div></div>
-      <button class="wd-del" onclick="delWd(${w.id})">x</button>
-    </div>`).join('');
-  let tpnl=0;
-  AT_ALL.filter(t=>t.action==='CONFIRM').forEach(t=>{const p=pnl(t);if(p!==null) tpnl+=p;});
-  const twd=wds.reduce((s,w)=>s+w.amount,0);
-  const sb=getSB();const bal=sb+tpnl-twd;
+  document.getElementById('wdlist').innerHTML=wds.map(w=>`<div class="wd-item"><div><div class="wd-amt">-$${w.amount.toFixed(2)}</div><div class="wd-dt">${w.note?w.note+' - ':''}${fmtD(w.date)}</div></div><button class="wd-del" onclick="delWd(${w.id})">x</button></div>`).join('');
+  let tpnl=0;AT_ALL.filter(t=>t.action==='CONFIRM').forEach(t=>{const p=pnl(t);if(p!==null) tpnl+=p;});
+  const twd=wds.reduce((s,w)=>s+w.amount,0);const sb=getSB();const bal=sb+tpnl-twd;
   const avgSl=avg(AT_ALL.map(t=>parseFloat(t.sl_dist)).filter(Boolean))||8;
   const lot=Math.max(0.01,Math.floor(bal*0.01/(avgSl*100)/0.01)*0.01);
   document.getElementById('bl-val').textContent='$'+bal.toFixed(2);
@@ -480,7 +528,6 @@ function renderLog(){
   document.getElementById('bl-pnl').style.color=tpnl>=0?'var(--g)':'var(--r)';
   document.getElementById('bl-wd').textContent='-$'+twd.toFixed(2);
   document.getElementById('bl-lot').textContent=lot.toFixed(2);
-
   let rows=AT_ALL;
   if(LF==='CONFIRM') rows=rows.filter(t=>t.action==='CONFIRM');
   else if(LF==='SKIP') rows=rows.filter(t=>t.action==='SKIP');
@@ -489,80 +536,42 @@ function renderLog(){
   else if(LF==='BUY') rows=rows.filter(t=>t.direction==='BUY');
   else if(LF==='SELL') rows=rows.filter(t=>t.direction==='SELL');
   rows=[...rows].reverse();
-  const total=rows.length,pages=Math.ceil(total/PS);
-  const slice=rows.slice((CP-1)*PS,CP*PS);
+  const total=rows.length,pages=Math.ceil(total/PS),slice=rows.slice((CP-1)*PS,CP*PS);
   if(!total){document.getElementById('tlist').innerHTML='<div class="empty">ไม่มีข้อมูล</div>';document.getElementById('pg').innerHTML='';return;}
   document.getElementById('tlist').innerHTML=slice.map(t=>tradeCard(t)).join('');
-  document.getElementById('pg').innerHTML=total<=PS?'':`
-    <button class="pb" onclick="chPg(-1)" ${CP===1?'disabled':''}>Prev</button>
-    <span class="pi">${CP}/${pages}</span>
-    <button class="pb" onclick="chPg(1)" ${CP===pages?'disabled':''}>Next</button>`;
+  document.getElementById('pg').innerHTML=total<=PS?'':`<button class="pb" onclick="chPg(-1)" ${CP===1?'disabled':''}>Prev</button><span class="pi">${CP}/${pages}</span><button class="pb" onclick="chPg(1)" ${CP===pages?'disabled':''}>Next</button>`;
 }
 function chPg(d){CP+=d;renderLog();window.scrollTo({top:document.getElementById('tlist').offsetTop-60,behavior:'smooth'});}
 function tradeCard(t){
-  const exit=t.exit_price;const p=exit?pnl(t):null;
-  const isC=t.action==='CONFIRM';const has=!!exit;
-  const key=TK(t);const aed=t.actual_entry||t.entry;
-  const exHtml=isC?`<div class="exsec">${has?`
-    <div class="pnl ${p>=0?'p':'l'}">PnL: ${p>=0?'+':''}$${p.toFixed(2)}</div>
-    <div class="res-det">Actual: ${aed} | Exit: ${exit}</div>
-    <button class="btn bo" style="margin-top:6px;font-size:10px;padding:4px 10px" onclick="clrExit('${key}')">แก้ไข</button>
-  `:`<div>
-    <div class="exrow"><input class="exinput" id="ae_${key}" type="number" placeholder="Actual entry (${t.entry})" step="0.01"/></div>
-    <div class="exrow"><input class="exinput" id="ex_${key}" type="number" placeholder="Exit price" step="0.01"/><button class="exbtn" data-save="${key}" onclick="svExit('${key}')">Save</button></div>
-  </div>`}</div>`:'';
-  return`<div class="tc ${has?(p>=0?'wp':'wl'):''}">
-    <div class="ttop"><div class="tdir ${t.direction.toLowerCase()}">${t.direction}</div><div class="tact ${t.action.toLowerCase()}">${isC?'CONFIRMED':'SKIPPED'}</div></div>
-    <div class="tg">
-      <div><div class="tfl">Signal Entry</div><div class="tfv">${t.entry||'-'}</div></div>
-      <div><div class="tfl">SL</div><div class="tfv">${t.sl||'-'}</div></div>
-      <div><div class="tfl">TP</div><div class="tfv">${t.tp||'-'}</div></div>
-      <div><div class="tfl">Lot</div><div class="tfv">${t.lot||'-'}</div></div>
-      <div><div class="tfl">ADX</div><div class="tfv">${parseFloat(t.adx||0).toFixed(1)}</div></div>
-      <div><div class="tfl">RSI</div><div class="tfv">${parseFloat(t.rsi||0).toFixed(1)}</div></div>
-    </div>
-    <div class="ttime">${fmtD(t.timestamp)}</div>${exHtml}
-  </div>`;
+  const exit=t.exit_price;const p=exit?pnl(t):null;const isC=t.action==='CONFIRM';const has=!!exit;const key=TK(t);const aed=t.actual_entry||t.entry;
+  const regime=t.regime?`<div><div class="tfl">Regime</div><div class="tfv">${t.regime}</div></div>`:'';
+  const session=t.session?`<div><div class="tfl">Session</div><div class="tfv">${t.session}</div></div>`:'';
+  const exHtml=isC?`<div class="exsec">${has?`<div class="pnl ${p>=0?'p':'l'}">PnL: ${p>=0?'+':''}$${p.toFixed(2)}</div><div class="res-det">Actual: ${aed} | Exit: ${exit}</div><button class="btn bo" style="margin-top:6px;font-size:10px;padding:4px 10px" onclick="clrExit('${key}')">แก้ไข</button>`:`<div><div class="exrow"><input class="exinput" id="ae_${key}" type="number" placeholder="Actual entry (${t.entry})" step="0.01"/></div><div class="exrow"><input class="exinput" id="ex_${key}" type="number" placeholder="Exit price" step="0.01"/><button class="exbtn" data-save="${key}" onclick="svExit('${key}')">Save</button></div></div>`}</div>`:'';
+  return`<div class="tc ${has?(p>=0?'wp':'wl'):''}"><div class="ttop"><div class="tdir ${t.direction.toLowerCase()}">${t.direction}</div><div class="tact ${t.action.toLowerCase()}">${isC?'CONFIRMED':'SKIPPED'}</div></div><div class="tg"><div><div class="tfl">Signal Entry</div><div class="tfv">${t.entry||'-'}</div></div><div><div class="tfl">SL</div><div class="tfv">${t.sl||'-'}</div></div><div><div class="tfl">TP</div><div class="tfv">${t.tp||'-'}</div></div><div><div class="tfl">Lot</div><div class="tfv">${t.lot||'-'}</div></div><div><div class="tfl">ADX</div><div class="tfv">${parseFloat(t.adx||0).toFixed(1)}</div></div><div><div class="tfl">RSI</div><div class="tfv">${parseFloat(t.rsi||0).toFixed(1)}</div></div>${regime}${session}</div><div class="ttime">${fmtD(t.timestamp)}</div>${exHtml}</div>`;
 }
 async function svExit(key){
-  const ex=document.getElementById('ex_'+key);
-  const ae=document.getElementById('ae_'+key);
-  if(!ex||!ex.value) return;
-  const ep=parseFloat(ex.value);const aep=ae&&ae.value?parseFloat(ae.value):null;
-  if(!ep) return;
-  const btn=document.querySelector(`[data-save="${key}"]`);
-  if(btn){btn.classList.add('saving');btn.textContent='Saving...';}
+  const ex=document.getElementById('ex_'+key);const ae=document.getElementById('ae_'+key);
+  if(!ex||!ex.value) return;const ep=parseFloat(ex.value);const aep=ae&&ae.value?parseFloat(ae.value):null;if(!ep) return;
+  const btn=document.querySelector(`[data-save="${key}"]`);if(btn){btn.classList.add('saving');btn.textContent='Saving...';}
   try{
     const idx=AT_ALL.findIndex(t=>TK(t)===key);if(idx===-1) throw new Error('not found');
-    AT_ALL[idx].exit_price=ep.toString();
-    if(aep) AT_ALL[idx].actual_entry=aep.toString();
+    AT_ALL[idx].exit_price=ep.toString();if(aep) AT_ALL[idx].actual_entry=aep.toString();
     if(getTok()){await pushCSV(csvStr(AT_ALL));setS('บันทึกสำเร็จ - push GitHub แล้ว','ok');}
     else setS('บันทึกแล้ว (ไม่มี Token)','ok');
     setTimeout(()=>setS('',''),3000);renderAll();
   }catch(e){setS('Error: '+e.message,'err');if(btn){btn.classList.remove('saving');btn.textContent='Save';}}
 }
-function clrExit(key){
-  const idx=AT_ALL.findIndex(t=>TK(t)===key);
-  if(idx!==-1){delete AT_ALL[idx].exit_price;delete AT_ALL[idx].actual_entry;}
-  renderAll();
-}
-function addWd(){
-  const a=parseFloat(document.getElementById('wamt').value);
-  const n=document.getElementById('wnote').value.trim();
-  if(!a||a<=0) return;
-  const w=getWD();w.push({id:Date.now(),amount:a,note:n,date:new Date().toISOString()});
-  setWD(w);document.getElementById('wamt').value='';document.getElementById('wnote').value='';renderAll();
-}
+function clrExit(key){const idx=AT_ALL.findIndex(t=>TK(t)===key);if(idx!==-1){delete AT_ALL[idx].exit_price;delete AT_ALL[idx].actual_entry;}renderAll();}
+function addWd(){const a=parseFloat(document.getElementById('wamt').value);const n=document.getElementById('wnote').value.trim();if(!a||a<=0) return;const w=getWD();w.push({id:Date.now(),amount:a,note:n,date:new Date().toISOString()});setWD(w);document.getElementById('wamt').value='';document.getElementById('wnote').value='';renderAll();}
 function delWd(id){setWD(getWD().filter(w=>w.id!==id));renderAll();}
 
-// ── OVERVIEW ──
+/* ─── OVERVIEW ─── */
 function renderOverview(){
   const cl=closed(ALL);const pnls=cl.map(t=>pnl(t)).filter(p=>p!==null);
   const wins=pnls.filter(p=>p>0);const losses=pnls.filter(p=>p<=0);
   const tp=sum(pnls);const wr=pnls.length?wins.length/pnls.length*100:0;
   const gw=sum(wins);const gl=Math.abs(sum(losses));
   const pf=gl>0?gw/gl:gw>0?999:0;
-  const sb=getSB();const bal=sb+sum(ALL.filter(t=>t.action==='CONFIRM').map(t=>pnl(t)).filter(p=>p!==null));
   document.getElementById('ov-wr').textContent=pnls.length?wr.toFixed(1)+'%':'-';
   document.getElementById('ov-wf').style.width=wr+'%';
   document.getElementById('ov-pf').textContent=pf>=999?'∞':pf.toFixed(2);
@@ -570,25 +579,49 @@ function renderOverview(){
   document.getElementById('ov-conf').textContent=confirmed(ALL).length+' conf / '+skipped(ALL).length+' skip';
   const rrs=cl.map(t=>{const p=pnl(t);const sl=parseFloat(t.sl_dist);if(!p||!sl) return null;const risk=sl*parseFloat(t.lot)*100;return risk>0?p/risk:null;}).filter(x=>x!==null);
   document.getElementById('ov-rr').textContent=rrs.length?avg(rrs).toFixed(2)+'R':'-';
-  document.getElementById('ov-aw').textContent=wins.length?'+$'+(sum(wins)/wins.length).toFixed(2):'-';
-  document.getElementById('ov-al').textContent=losses.length?'$'+(sum(losses)/losses.length).toFixed(2):'-';
+  const aw=wins.length?sum(wins)/wins.length:0;
+  const al=losses.length?Math.abs(sum(losses)/losses.length):0;
+  document.getElementById('ov-aw').textContent=wins.length?'+$'+aw.toFixed(2):'-';
+  document.getElementById('ov-al').textContent=losses.length?'-$'+al.toFixed(2):'-';
   const buys=cl.filter(t=>t.direction==='BUY');const sells=cl.filter(t=>t.direction==='SELL');
   const bp=buys.map(t=>pnl(t)).filter(p=>p!==null);const sp=sells.map(t=>pnl(t)).filter(p=>p!==null);
-  document.getElementById('ov-bt').textContent=buys.length+' trades';
-  document.getElementById('ov-bw').textContent='WR: '+(bp.length?(bp.filter(p=>p>0).length/bp.length*100).toFixed(1)+'%':'-');
-  document.getElementById('ov-bp').textContent='PnL: '+(bp.length?(sum(bp)>=0?'+':'')+' $'+sum(bp).toFixed(2):'-');
-  document.getElementById('ov-st').textContent=sells.length+' trades';
-  document.getElementById('ov-sw').textContent='WR: '+(sp.length?(sp.filter(p=>p>0).length/sp.length*100).toFixed(1)+'%':'-');
-  document.getElementById('ov-sp').textContent='PnL: '+(sp.length?(sum(sp)>=0?'+':'')+' $'+sum(sp).toFixed(2):'-');
+  document.getElementById('ov-bt').textContent=buys.length+' trades';document.getElementById('ov-bw').textContent='WR: '+(bp.length?(bp.filter(p=>p>0).length/bp.length*100).toFixed(1)+'%':'-');document.getElementById('ov-bp').textContent='PnL: '+(bp.length?(sum(bp)>=0?'+':'')+' $'+sum(bp).toFixed(2):'-');
+  document.getElementById('ov-st').textContent=sells.length+' trades';document.getElementById('ov-sw').textContent='WR: '+(sp.length?(sp.filter(p=>p>0).length/sp.length*100).toFixed(1)+'%':'-');document.getElementById('ov-sp').textContent='PnL: '+(sp.length?(sum(sp)>=0?'+':'')+' $'+sum(sp).toFixed(2):'-');
   let eq=getSB();const eqD=[],eqL=[];
   cl.sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp)).forEach(t=>{const p=pnl(t);if(p===null) return;eq+=p;eqD.push(parseFloat(eq.toFixed(2)));eqL.push(fmtD(t.timestamp));});
   if(eqD.length) mkC('ch-eq','line',{labels:eqL,datasets:[{label:'Balance',data:eqD,borderColor:'#2D6A4F',backgroundColor:'rgba(45,106,79,0.08)',borderWidth:2,pointRadius:2,tension:.3,fill:true}]});
   const mm={};cl.forEach(t=>{const p=pnl(t);if(p===null) return;const m=fmtM(t.timestamp);mm[m]=(mm[m]||0)+p;});
   const mk=Object.keys(mm);
   if(mk.length) mkC('ch-mon','bar',{labels:mk,datasets:[{label:'PnL',data:mk.map(k=>parseFloat(mm[k].toFixed(2))),backgroundColor:mk.map(k=>mm[k]>=0?'rgba(45,106,79,0.7)':'rgba(155,35,53,0.7)'),borderRadius:3}]});
+
+  /* ── NEW: Expectancy card ── */
+  const vEl=document.getElementById('ov-verdict');
+  const expEl=document.getElementById('ov-exp-card');
+  if(pnls.length<3){
+    vEl.innerHTML=verdictCard('info','📊','ยังต้องการข้อมูลเพิ่ม','ต้องการ closed trades อย่างน้อย 3 trades เพื่อคำนวณ expectancy');
+    expEl.innerHTML='';return;
+  }
+  const lossRate=1-(wr/100);
+  const expectancy=(wr/100)*aw - lossRate*al;
+  const expPerDay=expectancy*2; // ~2 signals/day estimate
+  let vType,vIcon,vTitle,vDesc;
+  if(expectancy>0.3){vType='ok';vIcon='✅';vTitle='ระบบมี Edge — Expectancy บวก';}
+  else if(expectancy>0){vType='warn';vIcon='⚠️';vTitle='Edge เล็กน้อย — ต้องจับตาต่อ';}
+  else{vType='bad';vIcon='🔴';vTitle='Expectancy ติดลบ — พิจารณาหยุดและ review';}
+  vDesc=`Expectancy: <b>${expectancy>=0?'+':''}$${expectancy.toFixed(3)}</b> ต่อ trade &nbsp;|&nbsp; WR: <b>${wr.toFixed(1)}%</b> &nbsp;|&nbsp; Avg W/L: <b>$${aw.toFixed(2)} / $${al.toFixed(2)}</b>`;
+  vEl.innerHTML=verdictCard(vType,vIcon,vTitle,vDesc);
+  expEl.innerHTML=`<div class="ins" style="margin-bottom:12px"><div class="ins-t">Expectancy Breakdown</div>
+    <div class="si-row"><div class="si-label">Win Rate</div><div class="si-val">${wr.toFixed(1)}%</div></div>
+    <div class="si-row"><div class="si-label">Loss Rate</div><div class="si-val">${(lossRate*100).toFixed(1)}%</div></div>
+    <div class="si-row"><div class="si-label">Avg Win</div><div class="si-val" style="color:var(--g)">+$${aw.toFixed(2)}</div></div>
+    <div class="si-row"><div class="si-label">Avg Loss</div><div class="si-val" style="color:var(--r)">-$${al.toFixed(2)}</div></div>
+    <div class="si-row"><div class="si-label">Profit Factor</div><div class="si-val">${pf>=999?'∞':pf.toFixed(2)}</div></div>
+    <div class="si-row"><div class="si-label">Expectancy / trade</div><div class="si-val" style="color:${expectancy>=0?'var(--g)':'var(--r)'}">${expectancy>=0?'+':''}$${expectancy.toFixed(3)}</div></div>
+    <div class="si-row" style="border-top:2px solid var(--bdr);margin-top:4px;padding-top:8px"><div class="si-label">Est. ~2 signals/day</div><div class="si-val" style="color:${expPerDay>=0?'var(--g)':'var(--r)'}">${expPerDay>=0?'+':''}$${expPerDay.toFixed(2)}/day</div></div>
+  </div>`;
 }
 
-// ── QUALITY ──
+/* ─── SIGNAL QUALITY ─── */
 function renderQuality(){
   const cl=closed(ALL);const wins=cl.filter(t=>(pnl(t)||0)>0);const losses=cl.filter(t=>(pnl(t)||0)<=0);
   const ga=t=>parseFloat(t.adx||0);const gr=t=>parseFloat(t.rsi||0);const gs=t=>parseFloat(t.sl_dist||0);
@@ -599,20 +632,45 @@ function renderQuality(){
   document.getElementById('sq-sw').textContent=wins.length?avg(wins.map(gs)).toFixed(2):'-';
   document.getElementById('sq-sl2').textContent=losses.length?avg(losses.map(gs)).toFixed(2):'-';
   const ab=[['<22',0,22],['22-25',22,25],['25-30',25,30],['30-35',30,35],['35-40',35,40],['>40',40,999]];
-  mkC('ch-adx','bar',{labels:ab.map(b=>b[0]),datasets:[
-    {label:'Win',data:ab.map(([,a,b])=>wins.filter(t=>ga(t)>=a&&ga(t)<b).length),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},
-    {label:'Loss',data:ab.map(([,a,b])=>losses.filter(t=>ga(t)>=a&&ga(t)<b).length),backgroundColor:'rgba(155,35,53,0.7)',borderRadius:3}
-  ]});
+  mkC('ch-adx','bar',{labels:ab.map(b=>b[0]),datasets:[{label:'Win',data:ab.map(([,a,b])=>wins.filter(t=>ga(t)>=a&&ga(t)<b).length),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},{label:'Loss',data:ab.map(([,a,b])=>losses.filter(t=>ga(t)>=a&&ga(t)<b).length),backgroundColor:'rgba(155,35,53,0.7)',borderRadius:3}]});
   const rb=[['<35',0,35],['35-40',35,40],['40-45',40,45],['45-50',45,50],['50-55',50,55],['55-60',55,60],['>60',60,999]];
-  mkC('ch-rsi','bar',{labels:rb.map(b=>b[0]),datasets:[
-    {label:'Win',data:rb.map(([,a,b])=>wins.filter(t=>gr(t)>=a&&gr(t)<b).length),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},
-    {label:'Loss',data:rb.map(([,a,b])=>losses.filter(t=>gr(t)>=a&&gr(t)<b).length),backgroundColor:'rgba(155,35,53,0.7)',borderRadius:3}
-  ]});
+  mkC('ch-rsi','bar',{labels:rb.map(b=>b[0]),datasets:[{label:'Win',data:rb.map(([,a,b])=>wins.filter(t=>gr(t)>=a&&gr(t)<b).length),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},{label:'Loss',data:rb.map(([,a,b])=>losses.filter(t=>gr(t)>=a&&gr(t)<b).length),backgroundColor:'rgba(155,35,53,0.7)',borderRadius:3}]});
   const hm={};for(let h=0;h<24;h++) hm[h]={w:0,l:0};
   cl.forEach(t=>{const h=thaiH(t.timestamp);const p=pnl(t);if(p===null) return;p>0?hm[h].w++:hm[h].l++;});
   const ah=Object.keys(hm).filter(h=>hm[h].w+hm[h].l>0);
   const hwr=ah.map(h=>{const{w,l}=hm[h];return w+l>0?parseFloat((w/(w+l)*100).toFixed(1)):0;});
   if(ah.length) mkC('ch-hour','bar',{labels:ah.map(h=>h+':00'),datasets:[{label:'WR%',data:hwr,backgroundColor:hwr.map(v=>v>=50?'rgba(45,106,79,0.7)':'rgba(155,35,53,0.7)'),borderRadius:3}]});
+
+  /* ── NEW: Regime breakdown ── */
+  const regEl=document.getElementById('sq-regime');
+  const hasSessions=cl.some(t=>t.session&&t.session.length>0);
+  const hasRegime=cl.some(t=>t.regime&&t.regime.length>0);
+  if(!hasRegime||cl.length<3){
+    regEl.innerHTML='<div class="verdict info"><div class="verdict-ico">ℹ️</div><div class="verdict-body"><div class="verdict-title">ต้องการ v2.4+</div><div class="verdict-desc">column <b>regime</b> จะปรากฏหลัง deploy signal_generator v2.4 และเก็บ trades ใหม่</div></div></div>';
+  } else {
+    const trend=cl.filter(t=>t.regime==='trend');const range=cl.filter(t=>t.regime==='range');
+    const tPnl=trend.map(t=>pnl(t)).filter(p=>p!==null);const rPnl=range.map(t=>pnl(t)).filter(p=>p!==null);
+    const tWR=tPnl.length?(tPnl.filter(v=>v>0).length/tPnl.length*100):0;
+    const rWR=rPnl.length?(rPnl.filter(v=>v>0).length/rPnl.length*100):0;
+    const tAvg=tPnl.length?avg(tPnl):0;const rAvg=rPnl.length?avg(rPnl):0;
+    const better=tWR>=rWR?'trend':'range';
+    regEl.innerHTML=`
+      <div class="regime-grid">
+        <div class="regime-card">
+          <div class="regime-title" style="color:var(--gld)">📈 Trend (ADX≥25)</div>
+          <div class="regime-wr" style="color:${tWR>=50?'var(--g)':'var(--r)'}">${tPnl.length?tWR.toFixed(1)+'%':'-'}</div>
+          <div class="regime-stat">${trend.length} trades &nbsp;|&nbsp; Avg ${tAvg>=0?'+':''}$${tAvg.toFixed(2)}</div>
+        </div>
+        <div class="regime-card">
+          <div class="regime-title" style="color:var(--dim)">↔ Range (ADX&lt;25)</div>
+          <div class="regime-wr" style="color:${rWR>=50?'var(--g)':'var(--r)'}">${rPnl.length?rWR.toFixed(1)+'%':'-'}</div>
+          <div class="regime-stat">${range.length} trades &nbsp;|&nbsp; Avg ${rAvg>=0?'+':''}$${rAvg.toFixed(2)}</div>
+        </div>
+      </div>
+      ${verdictCard(tWR>=rWR?'ok':'warn',tWR>=rWR?'✅':'⚠️',`Edge หลักอยู่ใน ${better==='trend'?'Trend':'Range'} regime`,`${better==='trend'?'Trend':'Range'} WR สูงกว่า ${Math.abs(tWR-rWR).toFixed(1)}% — ใช้ข้อมูลนี้ตอน optimize ADX_MIN หลังครบ 1 เดือน`)}`;
+  }
+
+  /* existing re-train insights */
   const ins=document.getElementById('rt-ins');
   if(cl.length<5){ins.innerHTML='<div class="empty">ต้องการ closed trades 5+ trades</div>';return;}
   const adxWA=wins.length?avg(wins.map(ga)):null;const adxLA=losses.length?avg(losses.map(ga)):null;
@@ -623,7 +681,7 @@ function renderQuality(){
   ].join('');
 }
 
-// ── MISSED ──
+/* ─── MISSED ─── */
 function renderMissed(){
   const sk=skipped(ALL);const sr=ALL.length?sk.length/ALL.length*100:0;
   const ep=sk.reduce((s,t)=>{const sl=parseFloat(t.sl_dist||0);const lot=parseFloat(t.lot||0.01);return s+sl*lot*100*2.5;},0);
@@ -634,17 +692,35 @@ function renderMissed(){
   document.getElementById('ms-dir').textContent='B:'+sk.filter(t=>t.direction==='BUY').length+' / S:'+sk.filter(t=>t.direction==='SELL').length;
   const mm={};ALL.forEach(t=>{const m=fmtM(t.timestamp);if(!mm[m]) mm[m]={c:0,s:0};t.action==='CONFIRM'?mm[m].c++:mm[m].s++;});
   const mk=Object.keys(mm);
-  if(mk.length) mkC('ch-skip','bar',{labels:mk,datasets:[
-    {label:'Confirmed',data:mk.map(k=>mm[k].c),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},
-    {label:'Skipped',data:mk.map(k=>mm[k].s),backgroundColor:'rgba(155,35,53,0.5)',borderRadius:3}
-  ]});
-  document.getElementById('ms-tbody').innerHTML=sk.slice(0,30).map(t=>`<tr>
-    <td>${fmtD(t.timestamp)}</td><td><span class="badge ${t.direction.toLowerCase()}">${t.direction}</span></td>
-    <td>${t.entry}</td><td>${parseFloat(t.adx||0).toFixed(1)}</td><td>${parseFloat(t.rsi||0).toFixed(1)}</td>
-  </tr>`).join('');
+  if(mk.length) mkC('ch-skip','bar',{labels:mk,datasets:[{label:'Confirmed',data:mk.map(k=>mm[k].c),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},{label:'Skipped',data:mk.map(k=>mm[k].s),backgroundColor:'rgba(155,35,53,0.5)',borderRadius:3}]});
+  document.getElementById('ms-tbody').innerHTML=sk.slice(0,30).map(t=>`<tr><td>${fmtD(t.timestamp)}</td><td><span class="badge ${t.direction.toLowerCase()}">${t.direction}</span></td><td>${t.entry}</td><td>${parseFloat(t.adx||0).toFixed(1)}</td><td>${parseFloat(t.rsi||0).toFixed(1)}</td></tr>`).join('');
+
+  /* ── NEW: Skip decision quality ── */
+  const qEl=document.getElementById('ms-quality');
+  const cl=closed(ALL);
+  // For each skip: check if exit would have been profitable (compare to nearest confirmed trade TP proximity)
+  // Since skips have no exit_price, use theoretical: if tp was hit = +, if sl was hit = bad skip
+  // We can only know from confirmed trades with same-day context — use simpler heuristic:
+  // A "bad skip" = skip where the signal direction matches the day's trend (confirmed wins same dir that day)
+  if(sk.length<2){qEl.innerHTML='<div class="verdict info"><div class="verdict-ico">📋</div><div class="verdict-body"><div class="verdict-title">ต้องการ skipped trades เพิ่ม</div><div class="verdict-desc">ต้องการ skipped trades 2+ เพื่อวิเคราะห์ skip quality</div></div></div>';return;}
+  // Count skips by ADX quality bucket
+  const highAdxSkip=sk.filter(t=>parseFloat(t.adx||0)>=25).length;
+  const lowAdxSkip=sk.filter(t=>parseFloat(t.adx||0)<25).length;
+  const highAdxSkipPct=sk.length?highAdxSkip/sk.length*100:0;
+  // High ADX skips = potentially "bad" skips (skipped good setups)
+  // Low ADX skips = potentially "good" skips (filtered weak setups)
+  let sqType,sqIcon,sqTitle,sqDesc;
+  if(highAdxSkipPct>60){sqType='warn';sqIcon='⚠️';sqTitle='Skip ส่วนใหญ่เกิดใน Trend market';sqDesc=`<b>${highAdxSkip}/${sk.length}</b> skips (${highAdxSkipPct.toFixed(0)}%) อยู่ใน ADX≥25 → อาจ skip setup ที่ดีเกินไป พิจารณา confirm มากขึ้นตอน trend ชัด`;}
+  else if(highAdxSkipPct<30){sqType='ok';sqIcon='✅';sqTitle='Skip Quality ดี — ส่วนใหญ่ skip ใน weak trend';sqDesc=`<b>${lowAdxSkip}/${sk.length}</b> skips (${(100-highAdxSkipPct).toFixed(0)}%) อยู่ใน ADX&lt;25 → skip behavior สอดคล้องกับ trend-following strategy`;}
+  else{sqType='info';sqIcon='📊';sqTitle='Skip pattern ผสม';sqDesc=`Trend skips: <b>${highAdxSkip}</b> | Range skips: <b>${lowAdxSkip}</b> — ต้องการ data เพิ่มเพื่อสรุปชัด`;}
+  qEl.innerHTML=`${verdictCard(sqType,sqIcon,sqTitle,sqDesc)}
+    <div class="ins"><div class="ins-t">Skip Breakdown by ADX</div><div class="ins-b">
+      <div class="pr"><div class="pl">ADX≥25</div><div class="pb2"><div class="pf" style="width:${highAdxSkipPct}%;background:var(--r)"></div></div><div class="pv">${highAdxSkip}</div></div>
+      <div class="pr"><div class="pl">ADX&lt;25</div><div class="pb2"><div class="pf" style="width:${100-highAdxSkipPct}%;background:var(--g)"></div></div><div class="pv">${lowAdxSkip}</div></div>
+    </div></div>`;
 }
 
-// ── RISK ──
+/* ─── RISK ─── */
 function renderRisk(){
   const cl=closed(ALL).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
   const sb=getSB();const pnls=cl.map(t=>pnl(t)).filter(p=>p!==null);
@@ -659,13 +735,24 @@ function renderRisk(){
   document.getElementById('rk-al').textContent=ls.length?'$'+(sum(ls)/ls.length).toFixed(2):'-';
   document.getElementById('rk-rt').textContent='$'+((sb+tp)*0.01).toFixed(2);
   if(ddD.length) mkC('ch-dd','line',{labels:ddL,datasets:[{label:'DD%',data:ddD,borderColor:'#9B2335',backgroundColor:'rgba(155,35,53,0.08)',borderWidth:2,pointRadius:1,tension:.3,fill:true}]});
-  document.getElementById('rk-streak').innerHTML=`<div class="ins"><div class="ins-t">Loss Streak</div><div class="ins-b">Max: <span class="ins-v">${ms}</span> consecutive | Rule: หยุดเมื่อแพ้ 3 ครั้งติด<br>${ms>=3?'<span style="color:var(--r)">⚠️ เคย trigger pause rule แล้ว</span>':'✅ ยังไม่เคย trigger'}</div></div>`;
+
+  /* ── NEW: DD alert banner ── */
+  const alertEl=document.getElementById('rk-alert');
+  if(!pnls.length){alertEl.innerHTML='';return;}
+  let aType,aIcon,aTitle,aDesc;
+  if(cdd<=0){aType='ok';aIcon='✅';aTitle='ไม่มี Drawdown ปัจจุบัน';aDesc='Equity อยู่ที่ peak — ระบบทำงานปกติ';}
+  else if(cdd<5){aType='ok';aIcon='✅';aTitle=`DD ปัจจุบัน ${cdd.toFixed(2)}% — ปกติ`;aDesc='อยู่ในขอบเขตที่ยอมรับได้ (&lt;5%) เทรดต่อได้ตามปกติ';}
+  else if(cdd<10){aType='warn';aIcon='⚠️';aTitle=`DD ปัจจุบัน ${cdd.toFixed(2)}% — ระวัง`;aDesc='DD เข้าสู่โซน warning (5–10%) พิจารณาลด lot size หรือ review signal quality';}
+  else{aType='bad';aIcon='🔴';aTitle=`DD ปัจจุบัน ${cdd.toFixed(2)}% — หยุดพิจารณา`;aDesc='DD เกิน 10% ควรหยุดเทรดและ review ระบบก่อนกลับมาใหม่';}
+  alertEl.innerHTML=verdictCard(aType,aIcon,aTitle,aDesc);
+
+  document.getElementById('rk-streak').innerHTML=`<div class="ins"><div class="ins-t">Loss Streak Analysis</div><div class="ins-b">Max consecutive losses: <span class="ins-v">${ms}</span> &nbsp;|&nbsp; Rule: หยุดเมื่อแพ้ 3 ครั้งติด<br>${ms>=3?'<span style="color:var(--r)">⚠️ เคย trigger pause rule แล้ว — ตรวจสอบ log ช่วงนั้น</span>':'✅ ยังไม่เคย trigger pause rule'}</div></div>`;
   const dm={};cl.forEach(t=>{const d=fmtD(t.timestamp);const p=pnl(t);if(p===null) return;dm[d]=(dm[d]||0)+p;});
   const wd=Object.entries(dm).sort((a,b)=>a[1]-b[1]).slice(0,5);
   document.getElementById('rk-days').innerHTML=`<div class="ins"><div class="ins-t">Worst Days</div><div class="ins-b">${wd.map(([d,p])=>`<div class="pr"><div class="pl">${d}</div><div class="pb2"><div class="pf" style="width:${Math.min(100,Math.abs(p)*10)}%;background:${p>=0?'var(--g)':'var(--r)'}"></div></div><div class="pv" style="color:${p>=0?'var(--g)':'var(--r)'}">${p>=0?'+':''}$${p.toFixed(2)}</div></div>`).join('')}</div></div>`;
 }
 
-// ── BEHAVIOR ──
+/* ─── BEHAVIOR ─── */
 function renderBehavior(){
   const cn=confirmed(ALL);const sk=skipped(ALL);const cl=closed(ALL);
   const cr=ALL.length?cn.length/ALL.length*100:0;
@@ -676,17 +763,11 @@ function renderBehavior(){
   const hc={},hs={};for(let h=0;h<24;h++){hc[h]=0;hs[h]=0;}
   ALL.forEach(t=>{const h=thaiH(t.timestamp);t.action==='CONFIRM'?hc[h]++:hs[h]++;});
   const ah=Object.keys(hc).filter(h=>hc[h]+hs[h]>0);
-  if(ah.length) mkC('ch-bh','bar',{labels:ah.map(h=>h+':00'),datasets:[
-    {label:'Confirmed',data:ah.map(h=>hc[h]),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},
-    {label:'Skipped',data:ah.map(h=>hs[h]),backgroundColor:'rgba(155,35,53,0.5)',borderRadius:3}
-  ]});
+  if(ah.length) mkC('ch-bh','bar',{labels:ah.map(h=>h+':00'),datasets:[{label:'Confirmed',data:ah.map(h=>hc[h]),backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},{label:'Skipped',data:ah.map(h=>hs[h]),backgroundColor:'rgba(155,35,53,0.5)',borderRadius:3}]});
   const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const dw=[],dl=[];for(let i=0;i<7;i++){dw.push(0);dl.push(0);}
   cl.forEach(t=>{const d=new Date(t.timestamp).getDay();const p=pnl(t);if(p===null) return;p>0?dw[d]++:dl[d]++;});
-  mkC('ch-dow','bar',{labels:days,datasets:[
-    {label:'Win',data:dw,backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},
-    {label:'Loss',data:dl,backgroundColor:'rgba(155,35,53,0.7)',borderRadius:3}
-  ]});
+  mkC('ch-dow','bar',{labels:days,datasets:[{label:'Win',data:dw,backgroundColor:'rgba(45,106,79,0.7)',borderRadius:3},{label:'Loss',data:dl,backgroundColor:'rgba(155,35,53,0.7)',borderRadius:3}]});
   const slips=cl.map(t=>{if(!t.actual_entry||t.actual_entry===t.entry) return null;return parseFloat(t.actual_entry)-parseFloat(t.entry);}).filter(s=>s!==null);
   if(slips.length) mkC('ch-slip','bar',{labels:slips.map((_,i)=>i+1),datasets:[{label:'Entry Diff',data:slips,backgroundColor:slips.map(s=>s>0?'rgba(155,35,53,0.7)':'rgba(45,106,79,0.7)'),borderRadius:2}]});
   const cb=cn.filter(t=>t.direction==='BUY').length,cs2=cn.filter(t=>t.direction==='SELL').length;
@@ -697,12 +778,39 @@ function renderBehavior(){
     <div class="pr"><div class="pl">BUY Skip</div><div class="pb2"><div class="pf" style="width:${sk.length?sb2/sk.length*100:0}%;background:var(--r)"></div></div><div class="pv">${sb2}</div></div>
     <div class="pr"><div class="pl">SELL Skip</div><div class="pb2"><div class="pf" style="width:${sk.length?ss/sk.length*100:0}%;background:var(--r)"></div></div><div class="pv">${ss}</div></div>
   </div></div>`;
+
+  /* ── NEW: Session performance ── */
+  const sesEl=document.getElementById('bh-session');
+  const hasSes=cl.some(t=>t.session&&t.session.length>0);
+  if(!hasSes||cl.length<3){
+    sesEl.innerHTML=verdictCard('info','ℹ️','ต้องการ v2.4+','column <b>session</b> จะปรากฏหลัง deploy signal_generator v2.4');
+    return;
+  }
+  const sessions=['London','NY','NY_Late','Asia'];
+  const sesStats=sessions.map(s=>{
+    const st=cl.filter(t=>t.session===s);
+    const sp=st.map(t=>pnl(t)).filter(p=>p!==null);
+    const wr=sp.length?sp.filter(v=>v>0).length/sp.length*100:null;
+    const ap=sp.length?avg(sp):null;
+    return{s,n:st.length,wr,ap};
+  }).filter(x=>x.n>0);
+  if(!sesStats.length){sesEl.innerHTML='<div class="empty">ยังไม่มี session data</div>';return;}
+  const best=sesStats.reduce((a,b)=>(b.wr||0)>(a.wr||0)?b:a,sesStats[0]);
+  sesEl.innerHTML=`
+    <div class="ins"><div class="ins-t">Session WR & Avg PnL</div><div class="ins-b">
+      ${sesStats.map(s=>`<div class="si-row"><div class="si-label">${s.s}</div><div class="si-val"><span style="color:${(s.wr||0)>=50?'var(--g)':'var(--r)'}">${s.wr!==null?s.wr.toFixed(1)+'%':'-'}</span> &nbsp; <span style="color:var(--dim);font-size:10px">${s.n} trades</span> &nbsp; <span style="color:${(s.ap||0)>=0?'var(--g)':'var(--r)'}">${s.ap!==null?(s.ap>=0?'+':'')+'$'+s.ap.toFixed(2):''}</span></div></div>`).join('')}
+    </div></div>
+    ${verdictCard('ok','🏆',`Best session: ${best.s} (WR ${(best.wr||0).toFixed(1)}%)`,`เน้น confirm signals ใน ${best.s} session ก่อน — ใช้ข้อมูลนี้ตอน optimize cron schedule`)}`;
 }
 
-// ── STRATEGY LAB ──
+/* ─── STRATEGY LAB ─── */
 function renderLab(){
   const cl=closed(ALL);
-  if(cl.length<5){document.getElementById('lab-adx').innerHTML='ต้องการ closed trades 5+ trades';return;}
+  if(cl.length<5){
+    document.getElementById('lab-recommend').innerHTML='';
+    document.getElementById('lab-adx').innerHTML='ต้องการ closed trades 5+ trades';
+    return;
+  }
   const ths=[20,22,24,26,28,30];
   const ar=ths.map(th=>{
     const f=cl.filter(t=>parseFloat(t.adx||0)>=th);
@@ -720,12 +828,32 @@ function renderLab(){
   mkC('ch-ls','bar',{labels:slb.map(b=>b[0]),datasets:[{label:'WR%',data:slwr,backgroundColor:slwr.map(v=>v>=50?'rgba(45,106,79,0.7)':'rgba(155,35,53,0.7)'),borderRadius:3}]});
   const bt=cl.filter(t=>t.direction==='BUY');const st=cl.filter(t=>t.direction==='SELL');
   const bp=bt.map(t=>pnl(t)).filter(p=>p!==null);const sp=st.map(t=>pnl(t)).filter(p=>p!==null);
-  document.getElementById('lab-bias').innerHTML=`<div class="g2">
-    <div class="ins"><div class="ins-t">BUY</div><div class="ins-b">Trades: <span class="ins-v">${bt.length}</span><br>WR: <span class="ins-v">${bp.length?(bp.filter(p=>p>0).length/bp.length*100).toFixed(1)+'%':'-'}</span><br>PnL: <span class="ins-v">${bp.length?(sum(bp)>=0?'+':'')+'$'+sum(bp).toFixed(2):'-'}</span></div></div>
-    <div class="ins"><div class="ins-t">SELL</div><div class="ins-b">Trades: <span class="ins-v">${st.length}</span><br>WR: <span class="ins-v">${sp.length?(sp.filter(p=>p>0).length/sp.length*100).toFixed(1)+'%':'-'}</span><br>PnL: <span class="ins-v">${sp.length?(sum(sp)>=0?'+':'')+'$'+sum(sp).toFixed(2):'-'}</span></div></div>
-  </div>`;
-  const ha2=cl.filter(t=>t.actual_entry&&t.actual_entry!==t.entry).length;
-  document.getElementById('lab-rt').innerHTML=`<div class="ins"><div class="ins-t">Re-train Dataset</div><div class="ins-b">Total records: <span class="ins-v">${ALL.length}</span><br>Closed trades: <span class="ins-v">${cl.length}</span><br>With actual entry: <span class="ins-v">${ha2}</span><br>Confirmed: <span class="ins-v">${confirmed(ALL).length}</span> | Skipped: <span class="ins-v">${skipped(ALL).length}</span><br><br><span style="color:var(--dim)">Export performance_log.csv จาก GitHub → นำไป re-train model ได้เลยครับ ข้อมูลมี indicator ครบ: ADX, RSI, EMA, BB, ATR + actual result</span></div></div>`;
+  document.getElementById('lab-bias').innerHTML=`<div class="g2"><div class="ins"><div class="ins-t">BUY</div><div class="ins-b">Trades: <span class="ins-v">${bt.length}</span><br>WR: <span class="ins-v">${bp.length?(bp.filter(p=>p>0).length/bp.length*100).toFixed(1)+'%':'-'}</span><br>PnL: <span class="ins-v">${bp.length?(sum(bp)>=0?'+':'')+'$'+sum(bp).toFixed(2):'-'}</span></div></div><div class="ins"><div class="ins-t">SELL</div><div class="ins-b">Trades: <span class="ins-v">${st.length}</span><br>WR: <span class="ins-v">${sp.length?(sp.filter(p=>p>0).length/sp.length*100).toFixed(1)+'%':'-'}</span><br>PnL: <span class="ins-v">${sp.length?(sum(sp)>=0?'+':'')+'$'+sum(sp).toFixed(2):'-'}</span></div></div></div>`;
+  document.getElementById('lab-rt').innerHTML=`<div class="ins"><div class="ins-t">Re-train Dataset</div><div class="ins-b">Total records: <span class="ins-v">${ALL.length}</span><br>Closed trades: <span class="ins-v">${cl.length}</span><br>With actual entry: <span class="ins-v">${cl.filter(t=>t.actual_entry&&t.actual_entry!==t.entry).length}</span><br>Confirmed: <span class="ins-v">${confirmed(ALL).length}</span> | Skipped: <span class="ins-v">${skipped(ALL).length}</span><br><br><span style="color:var(--dim)">Export performance_log.csv จาก GitHub → นำไป re-train model ได้เลยครับ</span></div></div>`;
+
+  /* ── NEW: Auto recommendation ── */
+  const recEl=document.getElementById('lab-recommend');
+  const pnls=cl.map(t=>pnl(t)).filter(p=>p!==null);
+  const wins=pnls.filter(p=>p>0);const losses=pnls.filter(p=>p<=0);
+  const wr=pnls.length?wins.length/pnls.length*100:0;
+  // Find best ADX threshold
+  const bestAdx=ar.filter(r=>r.n>=3).sort((a,b)=>parseFloat(b.wr)-parseFloat(a.wr))[0];
+  const currentAdx=ar.find(r=>r.th===22);
+  const recs=[];
+  // ADX recommendation
+  if(bestAdx&&currentAdx&&parseFloat(bestAdx.wr)-parseFloat(currentAdx.wr)>10&&bestAdx.th!==22){
+    recs.push(verdictCard('warn','📌',`พิจารณาเพิ่ม ADX_MIN → ${bestAdx.th}`,`ADX≥${bestAdx.th} ให้ WR ${bestAdx.wr}% (ปัจจุบัน ${currentAdx.wr}% ที่ ADX≥22) — เพิ่มขึ้น ${(parseFloat(bestAdx.wr)-parseFloat(currentAdx.wr)).toFixed(1)}% แต่ trades ลดเหลือ ${bestAdx.n}`));
+  }
+  // SL distance recommendation
+  const bestSlBucket=slb.map(([label,a,b],i)=>({label,wr:slwr[i]})).filter(x=>x.wr>0).sort((a,b)=>b.wr-a.wr)[0];
+  if(bestSlBucket&&bestSlBucket.wr>60){
+    recs.push(verdictCard('ok','✅',`SL dist ที่ดีที่สุด: ${bestSlBucket.label} pts (WR ${bestSlBucket.wr}%)`,`Focus signals ที่มี SL distance ในช่วงนี้ — ข้อมูลนี้ใช้ปรับ SL_BUFFER_MULT ได้ตอน optimize`));
+  }
+  // Overall verdict
+  if(wr>=55){recs.push(verdictCard('ok','🎯','ระบบ Ready สำหรับ 1 เดือนเต็ม',`WR ${wr.toFixed(1)}% ≥ 55% — เก็บ data ต่อไปโดยไม่เปลี่ยน parameter ใดๆ จนครบ 1 เดือน`));}
+  else if(wr>=45){recs.push(verdictCard('warn','⏳','ต้องการ data เพิ่ม',`WR ${wr.toFixed(1)}% ยังสรุปไม่ได้ — เก็บ data ต่อครบ 1 เดือนก่อน อย่าเปลี่ยน parameter ตอนนี้`));}
+  else if(pnls.length>=10){recs.push(verdictCard('bad','🔴','WR ต่ำกว่า 45% — ควร review',`WR ${wr.toFixed(1)}% หลัง ${pnls.length} trades — พิจารณา review signal conditions กับ architect ก่อนเก็บ data ต่อ`));}
+  recEl.innerHTML=recs.length?`<div class="shd">Recommendations</div>${recs.join('')}`:'';
 }
 
 function setS(msg,type){const el=document.getElementById('sbar');el.textContent=msg;el.className='sbar'+(type?' '+type:'');}
