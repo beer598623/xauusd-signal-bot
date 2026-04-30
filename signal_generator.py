@@ -1,6 +1,6 @@
 """
-XAUUSD MTF BB Pullback - Signal Generator v2.4
-Changes from v2.3:
+XAUUSD MTF BB Pullback - Signal Generator v2.5
+Changes from v2.4:
 - FIX-1: RSI loss=0 → replace 1e-10 (ป้องกัน NaN signal drop เงียบๆ)
 - FIX-2: API retry 3 ครั้ง + exponential backoff
 - FIX-3: Cache 1H data ทุก 60 นาที (ลด API call ~50%)
@@ -10,6 +10,8 @@ Changes from v2.3:
          เพิ่ม session guard (6, 18) UTC ใน code เป็น 2nd layer
 - FIX-7: Price-based expiry เพิ่มบน time-based (0.5 ATR threshold)
 - FIX-8: เพิ่ม regime tag "trend"/"range" ใน signal + log
+- FIX-9: บันทึก EXPIRED action ลง CSV แทนการ discard เงียบๆ
+         เพื่อให้มีข้อมูลตอน optimize ว่า expire บ่อยแค่ไหน
 """
 
 import os
@@ -596,7 +598,7 @@ def git_commit_log() -> None:
 
 
 def main() -> None:
-    log.info("XAUUSD Signal Generator v2.4 starting...")
+    log.info("XAUUSD Signal Generator v2.5 starting...")
     log.info(f"Balance: ${ACCOUNT_BALANCE} | Risk: {RISK_PERCENT}% | ADX min: {ADX_MIN}")
     log.info(f"Loop: {LOOP_INTERVAL_SEC}s | Active session: {ACTIVE_SESSION_UTC[0]}:00–{ACTIVE_SESSION_UTC[1]}:00 UTC")
     log.info(f"Signal expiry: {SIGNAL_EXPIRY_MIN} min | Loss streak limit: {MAX_LOSS_STREAK}")
@@ -632,11 +634,14 @@ def main() -> None:
                     # _last_price อัปเดตทุก loop จาก df_5m (ดูใน signal section)
                     if is_signal_expired(signal, _last_price):
                         answer_callback(cb["id"], "Signal expired!")
+                        # FIX-9: บันทึก EXPIRED ลง CSV แทน discard เงียบๆ
+                        append_log(signal, "EXPIRED")
+                        git_commit_log()
                         send_text(
                             f"⚠️ Signal {signal['direction']} @ {signal['entry']} หมดอายุแล้ว\n"
-                            f"(เกิน {SIGNAL_EXPIRY_MIN} นาที — ไม่บันทึก)"
+                            f"(เกิน {SIGNAL_EXPIRY_MIN} นาที — บันทึกเป็น EXPIRED)"
                         )
-                        log.warning(f"Expired signal discarded: {signal['direction']} @ {signal['entry']}")
+                        log.warning(f"Expired signal logged: {signal['direction']} @ {signal['entry']}")
                         continue
 
                     answer_callback(cb["id"], "Saved!" if data == "confirm" else "Skipped")
@@ -645,8 +650,14 @@ def main() -> None:
                     git_commit_log()
                     msg = "✅ Confirmed - Good luck!" if data == "confirm" else "❌ Skipped"
                     if _pending_queue:
-                        # FIX-4/7: ทำความสะอาด expired signals ออกจาก queue ก่อน
+                        # FIX-4/7+9: log expired signals ใน queue ก่อน clean
+                        expired_in_queue = [s for s in _pending_queue if is_signal_expired(s, _last_price)]
+                        for es in expired_in_queue:
+                            append_log(es, "EXPIRED")
+                            log.warning(f"Queue expired signal logged: {es['direction']} @ {es['entry']}")
                         _pending_queue = [s for s in _pending_queue if not is_signal_expired(s, _last_price)]
+                        if expired_in_queue:
+                            git_commit_log()
                         if _pending_queue:
                             msg += f"\n\nNext signal waiting ({len(_pending_queue)} in queue)"
                             send_text(msg)
